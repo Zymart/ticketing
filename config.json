@@ -1,0 +1,30 @@
+{
+  "token": "YOUR_BOT_TOKEN_HERE",
+  "clientId": "YOUR_CLIENT_ID_HERE",
+  "guildId": "YOUR_GUILD_ID_HERE",
+  "ownerId": "730629579533844512",
+  "adminIds": [],
+  "ticketSettings": {
+    "categoryId": "",
+    "supportRoleId": "",
+    "logChannelId": "",
+    "ordersChannelId": "",
+    "receivedChannelId": "",
+    "ongoingChannelId": ""
+  },
+  "panelSettings": {
+    "title": "🛒 Professional Order System",
+    "description": "**Ready to place your order?** Click the button below to get started!\n\n*Fill out our quick order form and get instant pricing!*",
+    "buttonText": "Place Your Order",
+    "services": "• Game Currency & Rare Items\n• Account Services & Boosts\n• Power-leveling & Achievements\n• Custom Gaming Services\n• VIP Packages & Bundles\n• Exclusive Limited Items",
+    "features": "✓ Instant Pricing\n✓ 24/7 Support\n✓ Secure Transactions\n✓ Fast Delivery\n✓ Money Back Guarantee\n✓ Trusted by 1000+ Customers",
+    "payments": "• PayPal • Crypto\n• Gift Cards • Bank Transfer\n• Cashapp • Venmo",
+    "footer": "🛡️ Secure Orders • 💯 Satisfaction Guaranteed • ⭐ Premium Service"
+  },
+  "colors": {
+    "primary": "#0099ff",
+    "success": "#00ff00", 
+    "warning": "#ffaa00",
+    "error": "#ff0000"
+  }
+}
