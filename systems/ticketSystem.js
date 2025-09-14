@@ -14,6 +14,86 @@ class TicketSystem {
         this.loadOrders();
     }
 
+    async cancelClose(interaction) {
+        await interaction.update({
+            content: '❌ Order cancellation cancelled. Order remains active.',
+            embeds: [],
+            components: []
+        });
+    }
+
+    async logOrderAction(action, user, channel, orderData) {
+        const logChannel = this.client.channels.cache.get(config.ticketSettings.logChannelId);
+        if (!logChannel) return;
+
+        const embed = new EmbedBuilder()
+            .setTitle(`🛒 Order ${action.charAt(0).toUpperCase() + action.slice(1)}`)
+            .addFields([
+                { name: '🆔 Order ID', value: orderData.orderId, inline: true },
+                { name: '👤 Customer', value: `${orderData.customer}`, inline: true },
+                { name: '👨‍💼 Staff', value: `${user}`, inline: true },
+                { name: '🎯 Service', value: orderData.serviceType, inline: true },
+                { name: '💰 Budget', value: orderData.budget, inline: true },
+                { name: '📊 Action', value: action, inline: true },
+                { name: '🎫 Channel', value: `${channel}`, inline: false },
+                { name: '⏰ Time', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+            ])
+            .setColor(action === 'completed' ? config.colors.success : 
+                     action === 'cancelled' ? config.colors.error : 
+                     config.colors.primary)
+            .setTimestamp();
+
+        await logChannel.send({ embeds: [embed] });
+    }
+
+    loadTickets() {
+        try {
+            if (fs.existsSync('./data/tickets.json')) {
+                const data = fs.readFileSync('./data/tickets.json', 'utf8');
+                this.activeTickets = new Map(JSON.parse(data));
+            }
+        } catch (error) {
+            console.error('Error loading tickets:', error);
+        }
+    }
+
+    saveTickets() {
+        try {
+            if (!fs.existsSync('./data')) {
+                fs.mkdirSync('./data');
+            }
+            fs.writeFileSync('./data/tickets.json', JSON.stringify([...this.activeTickets]));
+        } catch (error) {
+            console.error('Error saving tickets:', error);
+        }
+    }
+
+    loadOrders() {
+        try {
+            if (fs.existsSync('./data/orders.json')) {
+                const data = fs.readFileSync('./data/orders.json', 'utf8');
+                const ordersArray = JSON.parse(data);
+                this.orderData = new Map(ordersArray);
+            }
+        } catch (error) {
+            console.error('Error loading orders:', error);
+        }
+    }
+
+    saveOrders() {
+        try {
+            if (!fs.existsSync('./data')) {
+                fs.mkdirSync('./data');
+            }
+            fs.writeFileSync('./data/orders.json', JSON.stringify([...this.orderData]));
+        } catch (error) {
+            console.error('Error saving orders:', error);
+        }
+    }
+}
+
+module.exports = new TicketSystem();
+
     init(client) {
         this.client = client;
         
