@@ -68,8 +68,7 @@ async function createTables() {
                 completed_by VARCHAR(20),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 claimed_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                FOREIGN KEY (customer_id) REFERENCES users(user_id)
+                completed_at TIMESTAMP
             )
         `);
 
@@ -96,9 +95,7 @@ async function createTables() {
                 user_id VARCHAR(20),
                 item_id INTEGER,
                 quantity INTEGER DEFAULT 1,
-                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (item_id) REFERENCES shop_items(item_id)
+                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
@@ -114,9 +111,7 @@ async function createTables() {
                 status VARCHAR(20) DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                FOREIGN KEY (requester_id) REFERENCES users(user_id),
-                FOREIGN KEY (target_id) REFERENCES users(user_id)
+                completed_at TIMESTAMP
             )
         `);
 
@@ -125,8 +120,7 @@ async function createTables() {
             CREATE TABLE IF NOT EXISTS user_balances (
                 user_id VARCHAR(20) PRIMARY KEY,
                 balance DECIMAL(10,2) DEFAULT 0.00,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
@@ -322,3 +316,108 @@ async function getUserBalance(userId) {
         try {
             const result = await db.query('SELECT balance FROM user_balances WHERE user_id = $1', [userId]);
             return result.rows[0]?.balance || 0;
+        } catch (error) {
+            console.error('Error getting user balance:', error);
+            return 0;
+        }
+    } else {
+        // JSON fallback
+        try {
+            if (fs.existsSync('./data/balances.json')) {
+                const balances = JSON.parse(fs.readFileSync('./data/balances.json', 'utf8'));
+                return balances[userId] || 0;
+            }
+        } catch (error) {
+            console.error('Error reading balance data:', error);
+        }
+        return 0;
+    }
+}
+
+async function updateUserBalance(userId, newBalance) {
+    if (usePostgres) {
+        try {
+            await db.query(`
+                INSERT INTO user_balances (user_id, balance)
+                VALUES ($1, $2)
+                ON CONFLICT (user_id)
+                DO UPDATE SET balance = $2, updated_at = CURRENT_TIMESTAMP
+            `, [userId, newBalance]);
+        } catch (error) {
+            console.error('Error updating user balance:', error);
+        }
+    } else {
+        // JSON fallback
+        try {
+            let balances = {};
+            if (fs.existsSync('./data/balances.json')) {
+                balances = JSON.parse(fs.readFileSync('./data/balances.json', 'utf8'));
+            }
+            balances[userId] = newBalance;
+            fs.writeFileSync('./data/balances.json', JSON.stringify(balances, null, 2));
+        } catch (error) {
+            console.error('Error saving balance data:', error);
+        }
+    }
+}
+
+// Trade functions
+async function createTradeRequest(tradeData) {
+    if (usePostgres) {
+        try {
+            const result = await db.query(`
+                INSERT INTO trade_requests (requester_id, target_id, game_platform, requester_offer, target_offer, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING trade_id
+            `, [
+                tradeData.requesterId,
+                tradeData.targetId,
+                tradeData.gamePlatform,
+                tradeData.requesterOffer,
+                tradeData.targetOffer,
+                new Date(Date.now() + 24 * 60 * 60 * 1000) // Expires in 24 hours
+            ]);
+            return result.rows[0].trade_id;
+        } catch (error) {
+            console.error('Error creating trade request:', error);
+            return null;
+        }
+    } else {
+        // JSON fallback
+        try {
+            let trades = [];
+            if (fs.existsSync('./data/trades.json')) {
+                trades = JSON.parse(fs.readFileSync('./data/trades.json', 'utf8'));
+            }
+            
+            const newTrade = {
+                ...tradeData,
+                trade_id: Date.now(),
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            };
+            
+            trades.push(newTrade);
+            fs.writeFileSync('./data/trades.json', JSON.stringify(trades, null, 2));
+            return newTrade.trade_id;
+        } catch (error) {
+            console.error('Error creating trade request:', error);
+            return null;
+        }
+    }
+}
+
+// Export all functions
+module.exports = {
+    initDatabase,
+    getUser,
+    createOrUpdateUser,
+    saveOrder,
+    getShopItems,
+    createShopItem,
+    getUserBalance,
+    updateUserBalance,
+    createTradeRequest,
+    usePostgres: () => usePostgres
+};
