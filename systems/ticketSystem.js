@@ -638,6 +638,43 @@ class TicketSystem {
                 // Clear channel and send new message
                 const messages = await ongoingChannel.messages.fetch({ limit: 10 });
                 await ongoingChannel.bulkDelete(messages).catch(() => {});
+                await ongoingChannel.send({ embeds: [noOrdersEmbed] });
+            } catch (error) {
+                console.error('Error updating ongoing orders:', error);
+            }
+            return;
+        }
+
+        const ongoingEmbed = new EmbedBuilder()
+            .setTitle('📋 Ongoing Orders (Unclaimed)')
+            .setDescription(`**${pendingOrders.length} orders** waiting to be claimed by staff`)
+            .setColor(config.colors.warning)
+            .setTimestamp()
+            .setFooter({ text: `Last updated • ${pendingOrders.length} unclaimed orders • Orders disappear when claimed` });
+
+        // Add fields for each pending order
+        pendingOrders.slice(0, 10).forEach((order, index) => {
+            const timeAgo = `<t:${Math.floor(order.createdAt / 1000)}:R>`;
+            
+            ongoingEmbed.addFields([
+                {
+                    name: `🟡 ${order.orderId} - ${order.serviceType}`,
+                    value: `**Customer:** ${order.customer.displayName}\n**Budget:** ${order.budget} • **Urgency:** ${order.urgency}\n**Created:** ${timeAgo} • **Status:** Waiting for staff`,
+                    inline: false
+                }
+            ]);
+        });
+
+        if (pendingOrders.length > 10) {
+            ongoingEmbed.addFields([
+                { name: '📊 More Orders', value: `... and ${pendingOrders.length - 10} more orders waiting`, inline: false }
+            ]);
+        }
+
+        try {
+            // Clear channel and send new message
+            const messages = await ongoingChannel.messages.fetch({ limit: 10 });
+            await ongoingChannel.bulkDelete(messages).catch(() => {});
             await ongoingChannel.send({ embeds: [ongoingEmbed] });
         } catch (error) {
             console.error('Error updating ongoing orders:', error);
@@ -726,41 +763,4 @@ class TicketSystem {
     }
 }
 
-module.exports = new TicketSystem();.bulkDelete(messages).catch(() => {});
-                await ongoingChannel.send({ embeds: [noOrdersEmbed] });
-            } catch (error) {
-                console.error('Error updating ongoing orders:', error);
-            }
-            return;
-        }
-
-        const ongoingEmbed = new EmbedBuilder()
-            .setTitle('📋 Ongoing Orders (Unclaimed)')
-            .setDescription(`**${pendingOrders.length} orders** waiting to be claimed by staff`)
-            .setColor(config.colors.warning)
-            .setTimestamp()
-            .setFooter({ text: `Last updated • ${pendingOrders.length} unclaimed orders • Orders disappear when claimed` });
-
-        // Add fields for each pending order
-        pendingOrders.slice(0, 10).forEach((order, index) => {
-            const timeAgo = `<t:${Math.floor(order.createdAt / 1000)}:R>`;
-            
-            ongoingEmbed.addFields([
-                {
-                    name: `🟡 ${order.orderId} - ${order.serviceType}`,
-                    value: `**Customer:** ${order.customer.displayName}\n**Budget:** ${order.budget} • **Urgency:** ${order.urgency}\n**Created:** ${timeAgo} • **Status:** Waiting for staff`,
-                    inline: false
-                }
-            ]);
-        });
-
-        if (pendingOrders.length > 10) {
-            ongoingEmbed.addFields([
-                { name: '📊 More Orders', value: `... and ${pendingOrders.length - 10} more orders waiting`, inline: false }
-            ]);
-        }
-
-        try {
-            // Clear channel and send new message
-            const messages = await ongoingChannel.messages.fetch({ limit: 10 });
-            await ongoingChannel
+module.exports = new TicketSystem();
