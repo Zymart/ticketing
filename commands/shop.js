@@ -32,7 +32,7 @@ module.exports = {
                     },
                     { 
                         name: '🏪 **Category Management**', 
-                        value: '`!shop categories` - List all categories\n`!shop category <name>` - View category items\n`!shop restock <item_id> <amount>` - Restock item', 
+                        value: '`!shop categories` - List all categories\n`!shop category <n>` - View category items\n`!shop restock <item_id> <amount>` - Restock item', 
                         inline: false 
                     },
                     { 
@@ -183,6 +183,209 @@ module.exports = {
                 message.reply('❌ Error adding item to shop. Please try again.');
             }
         } catch (error) {
+            console.error('Error adding shop item:', error);
+            message.reply('❌ Error processing item data. Please check the format and try again.');
+        }
+    },
+
+    async createPanel(message, channelArg, client) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can create shop panels.');
+        }
+
+        let channel = message.channel;
+        if (channelArg) {
+            const channelId = channelArg.replace(/[<>#]/g, '');
+            try {
+                channel = await message.guild.channels.fetch(channelId);
+            } catch (error) {
+                return message.reply('❌ Could not find that channel!');
+            }
+        }
+
+        try {
+            const shopSystem = require('../systems/shopSystem');
+            await shopSystem.createShopPanel(channel);
+            
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Shop Panel Created!')
+                .setDescription(`Professional shop panel created in ${channel}!`)
+                .addFields([
+                    { name: '🏪 Features', value: 'Real item marketplace\nSecure trading system\nCategory browsing\nPurchase channels', inline: true },
+                    { name: '💎 Ready For', value: 'Roblox items\nGame accounts\nDigital goods\nCrypto trading', inline: true },
+                    { name: '🚀 Next Steps', value: 'Add items with `!shop add-item`\nMonitor with `!shop stats`\nManage with admin commands', inline: true }
+                ])
+                .setColor(config.colors.success);
+
+            message.reply({ embeds: [embed] });
+        } catch (error) {
+            console.error('Error creating shop panel:', error);
+            message.reply('❌ Error creating shop panel.');
+        }
+    },
+
+    async listItems(message, client) {
+        try {
+            const items = await database.getShopItems();
+            
+            if (items.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🛒 Shop Inventory')
+                    .setDescription('No items in the shop yet. Use `!shop add-item` to add some!')
+                    .setColor(config.colors.warning);
+                return message.reply({ embeds: [embed] });
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🛍️ Shop Inventory (${items.length} items)`)
+                .setDescription('All items currently in the marketplace:')
+                .setColor(config.colors.primary);
+
+            // Group items by category
+            const categories = {};
+            items.forEach(item => {
+                const cat = item.category || 'Other';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(item);
+            });
+
+            Object.keys(categories).slice(0, 6).forEach(category => {
+                const categoryItems = categories[category];
+                const itemsList = categoryItems.slice(0, 5).map(item => {
+                    const stock = item.stock === -1 ? '∞' : item.stock;
+                    return `**${item.name}** - $${item.price} (${stock} left)`;
+                }).join('\n');
+
+                embed.addFields([{
+                    name: `📂 ${category} (${categoryItems.length} items)`,
+                    value: itemsList + (categoryItems.length > 5 ? `\n... and ${categoryItems.length - 5} more` : ''),
+                    inline: true
+                }]);
+            });
+
+            if (Object.keys(categories).length > 6) {
+                embed.addFields([{
+                    name: '📊 More Categories',
+                    value: `... and ${Object.keys(categories).length - 6} more categories`,
+                    inline: false
+                }]);
+            }
+
+            embed.setFooter({ text: 'Use !shop category <name> to view specific categories' });
+            message.reply({ embeds: [embed] });
+        } catch (error) {
+            console.error('Error listing shop items:', error);
+            message.reply('❌ Error retrieving shop items.');
+        }
+    },
+
+    async removeItem(message, itemId, client) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can remove shop items.');
+        }
+
+        if (!itemId) {
+            return message.reply('❌ Please provide an item ID! Use `!shop list` to see item IDs.');
+        }
+
+        // Placeholder for now
+        message.reply('🚧 Item removal feature coming soon! For now, manually edit the database.');
+    },
+
+    async editItem(message, itemId, client) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can edit shop items.');
+        }
+
+        if (!itemId) {
+            return message.reply('❌ Please provide an item ID! Use `!shop list` to see item IDs.');
+        }
+
+        message.reply('🚧 Item editing feature coming soon!');
+    },
+
+    async showStats(message, client) {
+        try {
+            const items = await database.getShopItems();
+            const categories = [...new Set(items.map(item => item.category))];
+            const totalValue = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
+            const inStock = items.filter(item => item.stock !== 0).length;
+            const unlimited = items.filter(item => item.stock === -1).length;
+
+            const embed = new EmbedBuilder()
+                .setTitle('📊 Shop Statistics & Analytics')
+                .addFields([
+                    { name: '📦 Total Items', value: items.length.toString(), inline: true },
+                    { name: '📂 Categories', value: categories.length.toString(), inline: true },
+                    { name: '💰 Total Value', value: `$${totalValue.toFixed(2)}`, inline: true },
+                    { name: '✅ In Stock', value: inStock.toString(), inline: true },
+                    { name: '♾️ Unlimited Stock', value: unlimited.toString(), inline: true },
+                    { name: '📈 Avg Price', value: `$${items.length > 0 ? (totalValue / items.length).toFixed(2) : '0.00'}`, inline: true }
+                ])
+                .setColor(config.colors.primary)
+                .setTimestamp();
+
+            if (categories.length > 0) {
+                const topCategories = categories.slice(0, 5).map(cat => {
+                    const count = items.filter(item => item.category === cat).length;
+                    return `**${cat}:** ${count} items`;
+                }).join('\n');
+
+                embed.addFields([{
+                    name: '🏆 Top Categories',
+                    value: topCategories,
+                    inline: false
+                }]);
+            }
+
+            message.reply({ embeds: [embed] });
+        } catch (error) {
+            console.error('Error showing shop stats:', error);
+            message.reply('❌ Error retrieving shop statistics.');
+        }
+    },
+
+    async showCategory(message, categoryName, client) {
+        if (!categoryName) {
+            return message.reply('❌ Please specify a category name! Use `!shop categories` to see all categories.');
+        }
+
+        try {
+            const items = await database.getShopItems();
+            const categoryItems = items.filter(item => 
+                (item.category || 'Other').toLowerCase().includes(categoryName.toLowerCase())
+            );
+
+            if (categoryItems.length === 0) {
+                return message.reply(`❌ No items found in category "${categoryName}". Use \`!shop categories\` to see available categories.`);
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`📂 ${categoryName} Items (${categoryItems.length})`)
+                .setDescription(`All items in the **${categoryName}** category:`)
+                .setColor(config.colors.primary);
+
+            categoryItems.slice(0, 10).forEach((item, index) => {
+                const stock = item.stock === -1 ? 'Unlimited' : item.stock === 0 ? 'Out of Stock' : `${item.stock} left`;
+                const stockEmoji = item.stock === 0 ? '❌' : item.stock <= 5 && item.stock !== -1 ? '⚠️' : '✅';
+                
+                embed.addFields([{
+                    name: `${stockEmoji} ${item.name} - $${item.price}`,
+                    value: `**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 100)}${item.description.length > 100 ? '...' : ''}`,
+                    inline: true
+                }]);
+            });
+
+            if (categoryItems.length > 10) {
+                embed.addFields([{
+                    name: '📊 More Items',
+                    value: `... and ${categoryItems.length - 10} more items in this category`,
+                    inline: false
+                }]);
+            }
+
+            message.reply({ embeds: [embed] });
+        } catch (error) {
             console.error('Error showing category:', error);
             message.reply('❌ Error retrieving category items.');
         }
@@ -213,7 +416,7 @@ module.exports = {
                 const totalValue = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
                 embed.addFields([{
                     name: `${this.getCategoryEmoji(category)} ${category}`,
-                    value: `**Items:** ${items.length}\n**Total Value:** ${totalValue.toFixed(2)}\n**Avg Price:** ${(totalValue / items.length).toFixed(2)}`,
+                    value: `**Items:** ${items.length}\n**Total Value:** $${totalValue.toFixed(2)}\n**Avg Price:** $${(totalValue / items.length).toFixed(2)}`,
                     inline: true
                 }]);
             });
@@ -373,7 +576,7 @@ module.exports = {
                 const featuredItems = items.slice(0, 3);
                 featuredItems.forEach(item => {
                     embed.addFields([{
-                        name: `💎 ${item.name} - ${item.price}`,
+                        name: `💎 ${item.name} - $${item.price}`,
                         value: item.description.slice(0, 100),
                         inline: true
                     }]);
@@ -381,7 +584,7 @@ module.exports = {
 
                 embed.addFields([{
                     name: '📊 Shop Stats',
-                    value: `**Total Items:** ${items.length}\n**Categories:** ${[...new Set(items.map(i => i.category))].length}\n**Value:** ${items.reduce((sum, item) => sum + parseFloat(item.price), 0).toFixed(2)}`,
+                    value: `**Total Items:** ${items.length}\n**Categories:** ${[...new Set(items.map(i => i.category))].length}\n**Value:** $${items.reduce((sum, item) => sum + parseFloat(item.price), 0).toFixed(2)}`,
                     inline: false
                 }]);
             }
@@ -406,195 +609,4 @@ module.exports = {
         };
         return emojiMap[category] || '📦';
     }
-};) {
-            console.error('Error adding shop item:', error);
-            message.reply('❌ Error processing item data. Please check the format and try again.');
-        }
-    },
-
-    async createPanel(message, channelArg, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can create shop panels.');
-        }
-
-        let channel = message.channel;
-        if (channelArg) {
-            const channelId = channelArg.replace(/[<>#]/g, '');
-            try {
-                channel = await message.guild.channels.fetch(channelId);
-            } catch (error) {
-                return message.reply('❌ Could not find that channel!');
-            }
-        }
-
-        try {
-            const shopSystem = require('../systems/shopSystem');
-            await shopSystem.createShopPanel(channel);
-            
-            const embed = new EmbedBuilder()
-                .setTitle('✅ Shop Panel Created!')
-                .setDescription(`Professional shop panel created in ${channel}!`)
-                .addFields([
-                    { name: '🏪 Features', value: 'Real item marketplace\nSecure trading system\nCategory browsing\nPurchase channels', inline: true },
-                    { name: '💎 Ready For', value: 'Roblox items\nGame accounts\nDigital goods\nCrypto trading', inline: true },
-                    { name: '🚀 Next Steps', value: 'Add items with `!shop add-item`\nMonitor with `!shop stats`\nManage with admin commands', inline: true }
-                ])
-                .setColor(config.colors.success);
-
-            message.reply({ embeds: [embed] });
-        } catch (error) {
-            console.error('Error creating shop panel:', error);
-            message.reply('❌ Error creating shop panel.');
-        }
-    },
-
-    async listItems(message, client) {
-        try {
-            const items = await database.getShopItems();
-            
-            if (items.length === 0) {
-                const embed = new EmbedBuilder()
-                    .setTitle('🛒 Shop Inventory')
-                    .setDescription('No items in the shop yet. Use `!shop add-item` to add some!')
-                    .setColor(config.colors.warning);
-                return message.reply({ embeds: [embed] });
-            }
-
-            const embed = new EmbedBuilder()
-                .setTitle(`🛍️ Shop Inventory (${items.length} items)`)
-                .setDescription('All items currently in the marketplace:')
-                .setColor(config.colors.primary);
-
-            // Group items by category
-            const categories = {};
-            items.forEach(item => {
-                const cat = item.category || 'Other';
-                if (!categories[cat]) categories[cat] = [];
-                categories[cat].push(item);
-            });
-
-            Object.keys(categories).slice(0, 6).forEach(category => {
-                const categoryItems = categories[category];
-                const itemsList = categoryItems.slice(0, 5).map(item => {
-                    const stock = item.stock === -1 ? '∞' : item.stock;
-                    return `**${item.name}** - $${item.price} (${stock} left)`;
-                }).join('\n');
-
-                embed.addFields([{
-                    name: `📂 ${category} (${categoryItems.length} items)`,
-                    value: itemsList + (categoryItems.length > 5 ? `\n... and ${categoryItems.length - 5} more` : ''),
-                    inline: true
-                }]);
-            });
-
-            if (Object.keys(categories).length > 6) {
-                embed.addFields([{
-                    name: '📊 More Categories',
-                    value: `... and ${Object.keys(categories).length - 6} more categories`,
-                    inline: false
-                }]);
-            }
-
-            embed.setFooter({ text: 'Use !shop category <name> to view specific categories' });
-            message.reply({ embeds: [embed] });
-        } catch (error) {
-            console.error('Error listing shop items:', error);
-            message.reply('❌ Error retrieving shop items.');
-        }
-    },
-
-    async removeItem(message, itemId, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can remove shop items.');
-        }
-
-        if (!itemId) {
-            return message.reply('❌ Please provide an item ID! Use `!shop list` to see item IDs.');
-        }
-
-        // For now, just show a placeholder since we'd need to implement database deletion
-        message.reply('🚧 Item removal feature coming soon! For now, manually edit the database.');
-    },
-
-    async showStats(message, client) {
-        try {
-            const items = await database.getShopItems();
-            const categories = [...new Set(items.map(item => item.category))];
-            const totalValue = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
-            const inStock = items.filter(item => item.stock !== 0).length;
-            const unlimited = items.filter(item => item.stock === -1).length;
-
-            const embed = new EmbedBuilder()
-                .setTitle('📊 Shop Statistics & Analytics')
-                .addFields([
-                    { name: '📦 Total Items', value: items.length.toString(), inline: true },
-                    { name: '📂 Categories', value: categories.length.toString(), inline: true },
-                    { name: '💰 Total Value', value: `$${totalValue.toFixed(2)}`, inline: true },
-                    { name: '✅ In Stock', value: inStock.toString(), inline: true },
-                    { name: '♾️ Unlimited Stock', value: unlimited.toString(), inline: true },
-                    { name: '📈 Avg Price', value: `$${items.length > 0 ? (totalValue / items.length).toFixed(2) : '0.00'}`, inline: true }
-                ])
-                .setColor(config.colors.primary)
-                .setTimestamp();
-
-            if (categories.length > 0) {
-                const topCategories = categories.slice(0, 5).map(cat => {
-                    const count = items.filter(item => item.category === cat).length;
-                    return `**${cat}:** ${count} items`;
-                }).join('\n');
-
-                embed.addFields([{
-                    name: '🏆 Top Categories',
-                    value: topCategories,
-                    inline: false
-                }]);
-            }
-
-            message.reply({ embeds: [embed] });
-        } catch (error) {
-            console.error('Error showing shop stats:', error);
-            message.reply('❌ Error retrieving shop statistics.');
-        }
-    },
-
-    async showCategory(message, categoryName, client) {
-        if (!categoryName) {
-            return message.reply('❌ Please specify a category name! Use `!shop categories` to see all categories.');
-        }
-
-        try {
-            const items = await database.getShopItems();
-            const categoryItems = items.filter(item => 
-                (item.category || 'Other').toLowerCase().includes(categoryName.toLowerCase())
-            );
-
-            if (categoryItems.length === 0) {
-                return message.reply(`❌ No items found in category "${categoryName}". Use \`!shop categories\` to see available categories.`);
-            }
-
-            const embed = new EmbedBuilder()
-                .setTitle(`📂 ${categoryName} Items (${categoryItems.length})`)
-                .setDescription(`All items in the **${categoryName}** category:`)
-                .setColor(config.colors.primary);
-
-            categoryItems.slice(0, 10).forEach((item, index) => {
-                const stock = item.stock === -1 ? 'Unlimited' : item.stock === 0 ? 'Out of Stock' : `${item.stock} left`;
-                const stockEmoji = item.stock === 0 ? '❌' : item.stock <= 5 && item.stock !== -1 ? '⚠️' : '✅';
-                
-                embed.addFields([{
-                    name: `${stockEmoji} ${item.name} - $${item.price}`,
-                    value: `**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 100)}${item.description.length > 100 ? '...' : ''}`,
-                    inline: true
-                }]);
-            });
-
-            if (categoryItems.length > 10) {
-                embed.addFields([{
-                    name: '📊 More Items',
-                    value: `... and ${categoryItems.length - 10} more items in this category`,
-                    inline: false
-                }]);
-            }
-
-            message.reply({ embeds: [embed] });
-        } catch (error)
+};
