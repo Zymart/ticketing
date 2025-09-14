@@ -24,7 +24,105 @@ class TicketSystem {
 
     async logOrderAction(action, user, channel, orderData) {
         const logChannel = this.client.channels.cache.get(config.ticketSettings.logChannelId);
-        if (!logChannel) return;
+        if (pendingOrders.length > 10) {
+            ongoingEmbed.addFields([
+                { name: '📊 More Orders', value: `... and ${pendingOrders.length - 10} more orders waiting`, inline: false }
+            ]);
+        }
+
+        try {
+            // Clear channel and send new message
+            const messages = await ongoingChannel.messages.fetch({ limit: 10 });
+            await ongoingChannel.bulkDelete(messages).catch(() => {});
+            await ongoingChannel.send({ embeds: [ongoingEmbed] });
+        } catch (error) {
+            console.error('Error updating ongoing orders:', error);
+        }
+    }
+
+    async closeTicket(interaction) {
+        if (!interaction.channel.name.includes('order-')) {
+            return await interaction.reply({
+                content: '❌ This command can only be used in order channels.',
+                ephemeral: true
+            });
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('🔒 Cancel Order')
+            .setDescription('Are you sure you want to cancel this order?\nThis action cannot be undone.')
+            .setColor(config.colors.warning);
+
+        const confirmButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('confirm_close')
+                    .setLabel('Yes, Cancel Order')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('✅'),
+                new ButtonBuilder()
+                    .setCustomId('cancel_close')
+                    .setLabel('Keep Order Active')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('❌')
+            );
+
+        await interaction.reply({ embeds: [embed], components: [confirmButtons] });
+    }
+
+    async finalizeTicketClose(interaction) {
+        await interaction.deferUpdate();
+
+        const orderData = this.orderData.get(interaction.channel.id);
+
+        // Remove from active tickets and orders
+        for (const [userId, channelId] of this.activeTickets.entries()) {
+            if (channelId === interaction.channel.id) {
+                this.activeTickets.delete(userId);
+                break;
+            }
+        }
+        
+        if (orderData) {
+            orderData.status = 'cancelled';
+            orderData.cancelledBy = interaction.user;
+            orderData.cancelledAt = Date.now();
+            await database.saveOrder(orderData);
+        }
+        
+        this.orderData.delete(interaction.channel.id);
+        this.saveTickets();
+        this.saveOrders();
+
+        // Update ongoing orders
+        await this.updateOngoingOrders();
+
+        // Log order cancellation
+        if (orderData) {
+            await this.logOrderAction('cancelled', interaction.user, interaction.channel, orderData);
+        }
+
+        // Close message
+        const closedEmbed = new EmbedBuilder()
+            .setTitle('🔒 Order Cancelled')
+            .setDescription(`Order cancelled by ${interaction.user}\n\nChannel will be deleted in 10 seconds...`)
+            .setColor(config.colors.error)
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [closedEmbed], components: [] });
+
+        // Delete channel after delay
+        setTimeout(async () => {
+            try {
+                await interaction.channel.delete();
+            } catch (error) {
+                console.error('Error deleting order channel:', error);
+            }
+        }, 10000);
+    }
+}
+
+module.exports = new TicketSystem(); (!logChannel) return;
 
         const embed = new EmbedBuilder()
             .setTitle(`🛒 Order ${action.charAt(0).toUpperCase() + action.slice(1)}`)
@@ -90,9 +188,6 @@ class TicketSystem {
             console.error('Error saving orders:', error);
         }
     }
-}
-
-module.exports = new TicketSystem();
 
     init(client) {
         this.client = client;
@@ -668,98 +763,4 @@ module.exports = new TicketSystem();
             ]);
         });
 
-        if (pendingOrders.length > 10) {
-            ongoingEmbed.addFields([
-                { name: '📊 More Orders', value: `... and ${pendingOrders.length - 10} more orders waiting`, inline: false }
-            ]);
-        }
-
-        try {
-            // Clear channel and send new message
-            const messages = await ongoingChannel.messages.fetch({ limit: 10 });
-            await ongoingChannel.bulkDelete(messages).catch(() => {});
-            await ongoingChannel.send({ embeds: [ongoingEmbed] });
-        } catch (error) {
-            console.error('Error updating ongoing orders:', error);
-        }
-    }
-
-    async closeTicket(interaction) {
-        if (!interaction.channel.name.includes('order-')) {
-            return await interaction.reply({
-                content: '❌ This command can only be used in order channels.',
-                ephemeral: true
-            });
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('🔒 Cancel Order')
-            .setDescription('Are you sure you want to cancel this order?\nThis action cannot be undone.')
-            .setColor(config.colors.warning);
-
-        const confirmButtons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('confirm_close')
-                    .setLabel('Yes, Cancel Order')
-                    .setStyle(ButtonStyle.Danger)
-                    .setEmoji('✅'),
-                new ButtonBuilder()
-                    .setCustomId('cancel_close')
-                    .setLabel('Keep Order Active')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('❌')
-            );
-
-        await interaction.reply({ embeds: [embed], components: [confirmButtons] });
-    }
-
-    async finalizeTicketClose(interaction) {
-        await interaction.deferUpdate();
-
-        const orderData = this.orderData.get(interaction.channel.id);
-
-        // Remove from active tickets and orders
-        for (const [userId, channelId] of this.activeTickets.entries()) {
-            if (channelId === interaction.channel.id) {
-                this.activeTickets.delete(userId);
-                break;
-            }
-        }
-        
-        if (orderData) {
-            orderData.status = 'cancelled';
-            orderData.cancelledBy = interaction.user;
-            orderData.cancelledAt = Date.now();
-            await database.saveOrder(orderData);
-        }
-        
-        this.orderData.delete(interaction.channel.id);
-        this.saveTickets();
-        this.saveOrders();
-
-        // Update ongoing orders
-        await this.updateOngoingOrders();
-
-        // Log order cancellation
-        if (orderData) {
-            await this.logOrderAction('cancelled', interaction.user, interaction.channel, orderData);
-        }
-
-        // Close message
-        const closedEmbed = new EmbedBuilder()
-            .setTitle('🔒 Order Cancelled')
-            .setDescription(`Order cancelled by ${interaction.user}\n\nChannel will be deleted in 10 seconds...`)
-            .setColor(config.colors.error)
-            .setTimestamp();
-
-        await interaction.editReply({ embeds: [closedEmbed], components: [] });
-
-        // Delete channel after delay
-        setTimeout(async () => {
-            try {
-                await interaction.channel.delete();
-            } catch (error) {
-                console.error('Error deleting order channel:', error);
-            }
-        }, 10000);
+        if
