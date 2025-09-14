@@ -28,20 +28,37 @@ module.exports = {
         if (!args[0]) {
             const embed = new EmbedBuilder()
                 .setTitle('🔧 Setup Commands')
-                .setDescription('Use these commands to configure the bot:')
+                .setDescription('**Configure your advanced order bot:**')
                 .addFields([
-                    { name: '!setup category <channel-id>', value: 'Set the ticket category', inline: false },
-                    { name: '!setup support <role-id>', value: 'Set the support role', inline: false },
-                    { name: '!setup logs <channel-id>', value: 'Set the log channel', inline: false },
-                    { name: '!setup orders <channel-id>', value: 'Set the orders notification channel', inline: false },
-                    { name: '!setup received <channel-id>', value: 'Set the order received channel', inline: false },
-                    { name: '!setup ongoing <channel-id>', value: 'Set the ongoing orders channel', inline: false },
-                    { name: '!setup admin add <user-id>', value: 'Add an admin', inline: false },
-                    { name: '!setup admin remove <user-id>', value: 'Remove an admin', inline: false },
-                    { name: '!setup admin list', value: 'List all admins', inline: false },
-                    { name: '!setup status', value: 'Show current configuration', inline: false }
+                    { 
+                        name: '📁 **Channel Setup**', 
+                        value: '`!setup category <channel-id>` - Set ticket category\n`!setup logs <channel-id>` - Set log channel\n`!setup orders <channel-id>` - Set orders notification\n`!setup received <channel-id>` - Set completed orders\n`!setup ongoing <channel-id>` - Set pending orders', 
+                        inline: false 
+                    },
+                    { 
+                        name: '👥 **Role & User Setup**', 
+                        value: '`!setup support <role-id>` - Set support role\n`!setup admin add <user-id>` - Add admin\n`!setup admin remove <user-id>` - Remove admin\n`!setup admin list` - List all admins', 
+                        inline: false 
+                    },
+                    { 
+                        name: '🎛️ **Panel Commands**', 
+                        value: '`!panel create [channel]` - Create order panel\n`!panel template gaming` - Gaming template\n`!panel template digital` - Digital template\n`!panel template services` - Services template', 
+                        inline: false 
+                    },
+                    { 
+                        name: '🛍️ **Shop Commands**', 
+                        value: '`!shop panel [channel]` - Create shop panel\n`!shop add-item Name | Price | Category | Description | Stock | URL`\n`!shop list` - View all items\n`!shop stats` - Shop statistics', 
+                        inline: false 
+                    },
+                    { 
+                        name: '📊 **Status & Help**', 
+                        value: '`!setup status` - Show current config\n`!admin info` - Bot statistics\n`!ticket panel [channel]` - Create ticket panel', 
+                        inline: false 
+                    }
                 ])
-                .setColor(config.colors.primary);
+                .setColor(config.colors.primary)
+                .setThumbnail('https://cdn-icons-png.flaticon.com/512/3524/3524659.png')
+                .setFooter({ text: '💡 Pro Tip: Use channel/role IDs, not names! Enable Developer Mode to copy IDs.' });
             
             return message.reply({ embeds: [embed] });
         }
@@ -80,151 +97,186 @@ module.exports = {
 
     async setupCategory(message, categoryId) {
         if (!categoryId) {
-            return message.reply('❌ Please provide a category ID! Example: `!setup category 123456789`');
+            return message.reply('❌ Please provide a category ID!\n\n**Example:** `!setup category 1234567890123456789`\n\n**How to get ID:**\n1. Enable Developer Mode in Discord settings\n2. Right-click on the category\n3. Select "Copy ID"');
         }
 
         try {
-            const category = await message.guild.channels.fetch(categoryId);
-            if (!category || category.type !== ChannelType.GuildCategory) {
-                return message.reply('❌ Invalid category! Make sure you provide a valid category ID.');
+            // Clean the ID (remove any extra characters)
+            const cleanId = categoryId.replace(/[^0-9]/g, '');
+            
+            if (cleanId.length < 17 || cleanId.length > 20) {
+                return message.reply('❌ Invalid category ID format! Discord IDs should be 17-20 digits long.\n\n**Make sure to:**\n• Enable Developer Mode\n• Right-click the **category** (not a channel)\n• Copy the correct ID');
             }
 
-            config.ticketSettings.categoryId = categoryId;
+            const category = await message.guild.channels.fetch(cleanId).catch(() => null);
+            
+            if (!category) {
+                return message.reply('❌ Cannot find that category! Please check:\n\n• The ID is correct\n• The category exists in this server\n• The bot has permission to see it\n• You copied a **category** ID (not channel ID)');
+            }
+            
+            if (category.type !== ChannelType.GuildCategory) {
+                return message.reply(`❌ That's not a category! You selected: **${category.name}** (${category.type})\n\n**You need to:**\n• Right-click on a **CATEGORY** (the folder-like containers)\n• Not a text/voice channel\n• Categories appear above channels in the sidebar`);
+            }
+
+            config.ticketSettings.categoryId = cleanId;
             saveConfig();
 
             const embed = new EmbedBuilder()
-                .setTitle('✅ Category Set!')
-                .setDescription(`Ticket category has been set to: **${category.name}**`)
-                .setColor(config.colors.success);
+                .setTitle('✅ Category Successfully Set!')
+                .setDescription(`Ticket category: **${category.name}**\n\nAll order channels will be created under this category!`)
+                .addFields([
+                    { name: '📂 Category Name', value: category.name, inline: true },
+                    { name: '🆔 Category ID', value: cleanId, inline: true },
+                    { name: '🎫 Channels', value: `${category.children.cache.size} channels`, inline: true }
+                ])
+                .setColor(config.colors.success)
+                .setThumbnail('https://cdn-icons-png.flaticon.com/512/1239/1239425.png');
 
             message.reply({ embeds: [embed] });
         } catch (error) {
-            message.reply('❌ Could not find that category. Make sure the ID is correct and the bot has access to it.');
+            console.error('Setup category error:', error);
+            message.reply('❌ Error accessing that category. Please verify:\n\n• The bot has permission to view the category\n• The category exists in this server\n• You\'re using the correct category ID');
         }
     },
 
     async setupSupport(message, roleId) {
         if (!roleId) {
-            return message.reply('❌ Please provide a role ID! Example: `!setup support 123456789`');
+            return message.reply('❌ Please provide a role ID!\n\n**Example:** `!setup support 1234567890123456789`\n\n**How to get role ID:**\n1. Enable Developer Mode\n2. Right-click the role in member list or settings\n3. Select "Copy ID"');
         }
 
         try {
-            const role = await message.guild.roles.fetch(roleId);
+            const cleanId = roleId.replace(/[^0-9]/g, '');
+            const role = await message.guild.roles.fetch(cleanId).catch(() => null);
+            
             if (!role) {
-                return message.reply('❌ Invalid role! Make sure you provide a valid role ID.');
+                return message.reply('❌ Cannot find that role! Make sure:\n• The role exists in this server\n• The ID is correct\n• You copied a role ID (not user ID)');
             }
 
-            config.ticketSettings.supportRoleId = roleId;
+            config.ticketSettings.supportRoleId = cleanId;
             saveConfig();
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ Support Role Set!')
-                .setDescription(`Support role has been set to: **${role.name}**`)
-                .setColor(config.colors.success);
+                .setDescription(`Support role: **${role.name}**\n\nThis role will be pinged for new orders!`)
+                .addFields([
+                    { name: '👨‍💼 Role Name', value: role.name, inline: true },
+                    { name: '🎨 Role Color', value: role.hexColor, inline: true },
+                    { name: '👥 Members', value: `${role.members.size} members`, inline: true }
+                ])
+                .setColor(role.color || config.colors.success);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
-            message.reply('❌ Could not find that role. Make sure the ID is correct.');
+            console.error('Setup support error:', error);
+            message.reply('❌ Error setting support role. Please check the role ID and permissions.');
         }
     },
 
     async setupLogs(message, channelId) {
         if (!channelId) {
-            return message.reply('❌ Please provide a channel ID! Example: `!setup logs 123456789`');
+            return message.reply('❌ Please provide a channel ID!\n\n**Example:** `!setup logs 1234567890123456789`');
         }
 
         try {
-            const channel = await message.guild.channels.fetch(channelId);
+            const cleanId = channelId.replace(/[^0-9]/g, '');
+            const channel = await message.guild.channels.fetch(cleanId).catch(() => null);
+            
             if (!channel || channel.type !== ChannelType.GuildText) {
-                return message.reply('❌ Invalid channel! Make sure you provide a valid text channel ID.');
+                return message.reply('❌ Invalid channel! Make sure it\'s a **text channel** and the bot can access it.');
             }
 
-            config.ticketSettings.logChannelId = channelId;
+            config.ticketSettings.logChannelId = cleanId;
             saveConfig();
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ Log Channel Set!')
-                .setDescription(`Log channel has been set to: **${channel.name}**`)
+                .setDescription(`Log channel: **${channel.name}**\n\nAll order activities will be logged here!`)
                 .setColor(config.colors.success);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
-            message.reply('❌ Could not find that channel. Make sure the ID is correct and the bot has access to it.');
+            message.reply('❌ Could not access that channel. Make sure the bot has permissions and it\'s a valid text channel.');
         }
     },
 
     async setupOrders(message, channelId) {
         if (!channelId) {
-            return message.reply('❌ Please provide a channel ID! Example: `!setup orders 123456789`');
+            return message.reply('❌ Please provide a channel ID!\n\n**Example:** `!setup orders 1234567890123456789`');
         }
 
         try {
-            const channel = await message.guild.channels.fetch(channelId);
+            const cleanId = channelId.replace(/[^0-9]/g, '');
+            const channel = await message.guild.channels.fetch(cleanId).catch(() => null);
+            
             if (!channel || channel.type !== ChannelType.GuildText) {
-                return message.reply('❌ Invalid channel! Make sure you provide a valid text channel ID.');
+                return message.reply('❌ Invalid channel! Make sure it\'s a text channel.');
             }
 
-            config.ticketSettings.ordersChannelId = channelId;
+            config.ticketSettings.ordersChannelId = cleanId;
             saveConfig();
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ Orders Channel Set!')
-                .setDescription(`Orders notification channel has been set to: **${channel.name}**\n\nAll new orders will be announced here! 🛒`)
+                .setDescription(`Orders notification channel: **${channel.name}**\n\n🛒 All new orders will be announced here!`)
                 .setColor(config.colors.success);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
-            message.reply('❌ Could not find that channel. Make sure the ID is correct and the bot has access to it.');
+            message.reply('❌ Could not access that channel.');
         }
     },
 
     async setupReceived(message, channelId) {
         if (!channelId) {
-            return message.reply('❌ Please provide a channel ID! Example: `!setup received 123456789`');
+            return message.reply('❌ Please provide a channel ID!\n\n**Example:** `!setup received 1234567890123456789`');
         }
 
         try {
-            const channel = await message.guild.channels.fetch(channelId);
+            const cleanId = channelId.replace(/[^0-9]/g, '');
+            const channel = await message.guild.channels.fetch(cleanId).catch(() => null);
+            
             if (!channel || channel.type !== ChannelType.GuildText) {
-                return message.reply('❌ Invalid channel! Make sure you provide a valid text channel ID.');
+                return message.reply('❌ Invalid channel! Make sure it\'s a text channel.');
             }
 
-            config.ticketSettings.receivedChannelId = channelId;
+            config.ticketSettings.receivedChannelId = cleanId;
             saveConfig();
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ Order Received Channel Set!')
-                .setDescription(`Order received channel has been set to: **${channel.name}**\n\nCompleted orders will be announced here! 🎉`)
+                .setDescription(`Completed orders channel: **${channel.name}**\n\n🎉 Completed orders will be celebrated here!`)
                 .setColor(config.colors.success);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
-            message.reply('❌ Could not find that channel. Make sure the ID is correct and the bot has access to it.');
+            message.reply('❌ Could not access that channel.');
         }
     },
 
     async setupOngoing(message, channelId) {
         if (!channelId) {
-            return message.reply('❌ Please provide a channel ID! Example: `!setup ongoing 123456789`');
+            return message.reply('❌ Please provide a channel ID!\n\n**Example:** `!setup ongoing 1234567890123456789`');
         }
 
         try {
-            const channel = await message.guild.channels.fetch(channelId);
+            const cleanId = channelId.replace(/[^0-9]/g, '');
+            const channel = await message.guild.channels.fetch(cleanId).catch(() => null);
+            
             if (!channel || channel.type !== ChannelType.GuildText) {
-                return message.reply('❌ Invalid channel! Make sure you provide a valid text channel ID.');
+                return message.reply('❌ Invalid channel! Make sure it\'s a text channel.');
             }
 
-            config.ticketSettings.ongoingChannelId = channelId;
+            config.ticketSettings.ongoingChannelId = cleanId;
             saveConfig();
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ Ongoing Orders Channel Set!')
-                .setDescription(`Ongoing orders channel has been set to: **${channel.name}**\n\nActive orders will be tracked here! 📋`)
+                .setDescription(`Pending orders channel: **${channel.name}**\n\n📋 Unclaimed orders will be tracked here!`)
                 .setColor(config.colors.success);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
-            message.reply('❌ Could not find that channel. Make sure the ID is correct and the bot has access to it.');
+            message.reply('❌ Could not access that channel.');
         }
     },
 
@@ -238,16 +290,18 @@ module.exports = {
         switch (action) {
             case 'add':
                 if (!args[1]) {
-                    return message.reply('❌ Please provide a user ID! Example: `!setup admin add 123456789`');
+                    return message.reply('❌ Please provide a user ID!\n\n**Example:** `!setup admin add 1234567890123456789`');
                 }
 
-                if (config.adminIds.includes(args[1])) {
+                const cleanUserId = args[1].replace(/[^0-9]/g, '');
+                
+                if (config.adminIds.includes(cleanUserId)) {
                     return message.reply('❌ That user is already an admin!');
                 }
 
                 try {
-                    const user = await message.guild.members.fetch(args[1]);
-                    config.adminIds.push(args[1]);
+                    const user = await message.guild.members.fetch(cleanUserId);
+                    config.adminIds.push(cleanUserId);
                     saveConfig();
 
                     const embed = new EmbedBuilder()
@@ -263,16 +317,18 @@ module.exports = {
 
             case 'remove':
                 if (!args[1]) {
-                    return message.reply('❌ Please provide a user ID! Example: `!setup admin remove 123456789`');
+                    return message.reply('❌ Please provide a user ID!');
                 }
 
-                const index = config.adminIds.indexOf(args[1]);
+                const removeUserId = args[1].replace(/[^0-9]/g, '');
+                const index = config.adminIds.indexOf(removeUserId);
+                
                 if (index === -1) {
                     return message.reply('❌ That user is not an admin!');
                 }
 
                 try {
-                    const user = await message.guild.members.fetch(args[1]);
+                    const user = await message.guild.members.fetch(removeUserId);
                     config.adminIds.splice(index, 1);
                     saveConfig();
 
@@ -292,7 +348,7 @@ module.exports = {
 
             case 'list':
                 if (config.adminIds.length === 0) {
-                    return message.reply('📝 No admins have been set yet.');
+                    return message.reply('📝 No admins have been set yet.\n\nUse `!setup admin add <user-id>` to add admins.');
                 }
 
                 let adminList = '';
@@ -319,69 +375,63 @@ module.exports = {
     },
 
     async showStatus(message) {
-        let categoryName = 'Not set';
-        let supportRoleName = 'Not set';
-        let logChannelName = 'Not set';
-        let ordersChannelName = 'Not set';
-        let receivedChannelName = 'Not set';
-        let ongoingChannelName = 'Not set';
+        let categoryName = '❌ Not set';
+        let supportRoleName = '❌ Not set';
+        let logChannelName = '❌ Not set';
+        let ordersChannelName = '❌ Not set';
+        let receivedChannelName = '❌ Not set';
+        let ongoingChannelName = '❌ Not set';
 
+        // Check category
         try {
             if (config.ticketSettings.categoryId) {
                 const category = await message.guild.channels.fetch(config.ticketSettings.categoryId);
-                categoryName = category ? category.name : 'Invalid ID';
+                categoryName = category ? `✅ ${category.name}` : '❌ Invalid ID';
             }
         } catch (error) {
-            categoryName = 'Invalid ID';
+            categoryName = '❌ Invalid ID';
         }
 
+        // Check support role
         try {
             if (config.ticketSettings.supportRoleId) {
                 const role = await message.guild.roles.fetch(config.ticketSettings.supportRoleId);
-                supportRoleName = role ? role.name : 'Invalid ID';
+                supportRoleName = role ? `✅ ${role.name}` : '❌ Invalid ID';
             }
         } catch (error) {
-            supportRoleName = 'Invalid ID';
+            supportRoleName = '❌ Invalid ID';
         }
 
-        try {
-            if (config.ticketSettings.logChannelId) {
-                const channel = await message.guild.channels.fetch(config.ticketSettings.logChannelId);
-                logChannelName = channel ? channel.name : 'Invalid ID';
+        // Check all channels
+        const channels = [
+            { key: 'logChannelId', name: 'logChannelName' },
+            { key: 'ordersChannelId', name: 'ordersChannelName' },
+            { key: 'receivedChannelId', name: 'receivedChannelName' },
+            { key: 'ongoingChannelId', name: 'ongoingChannelName' }
+        ];
+
+        for (const { key, name } of channels) {
+            try {
+                if (config.ticketSettings[key]) {
+                    const channel = await message.guild.channels.fetch(config.ticketSettings[key]);
+                    eval(`${name} = channel ? \`✅ ${channel.name}\` : '❌ Invalid ID'`);
+                }
+            } catch (error) {
+                eval(`${name} = '❌ Invalid ID'`);
             }
-        } catch (error) {
-            logChannelName = 'Invalid ID';
         }
 
-        try {
-            if (config.ticketSettings.ordersChannelId) {
-                const channel = await message.guild.channels.fetch(config.ticketSettings.ordersChannelId);
-                ordersChannelName = channel ? channel.name : 'Invalid ID';
-            }
-        } catch (error) {
-            ordersChannelName = 'Invalid ID';
-        }
-
-        try {
-            if (config.ticketSettings.receivedChannelId) {
-                const channel = await message.guild.channels.fetch(config.ticketSettings.receivedChannelId);
-                receivedChannelName = channel ? channel.name : 'Invalid ID';
-            }
-        } catch (error) {
-            receivedChannelName = 'Invalid ID';
-        }
-
-        try {
-            if (config.ticketSettings.ongoingChannelId) {
-                const channel = await message.guild.channels.fetch(config.ticketSettings.ongoingChannelId);
-                ongoingChannelName = channel ? channel.name : 'Invalid ID';
-            }
-        } catch (error) {
-            ongoingChannelName = 'Invalid ID';
-        }
+        const setupComplete = 
+            config.ticketSettings.categoryId && 
+            config.ticketSettings.supportRoleId && 
+            config.ticketSettings.logChannelId && 
+            config.ticketSettings.ordersChannelId && 
+            config.ticketSettings.receivedChannelId && 
+            config.ticketSettings.ongoingChannelId;
 
         const embed = new EmbedBuilder()
             .setTitle('🔧 Bot Configuration Status')
+            .setDescription(setupComplete ? '✅ **Setup Complete!** Your bot is ready to use!' : '⚠️ **Setup Required!** Some settings are missing.')
             .addFields([
                 { name: '📁 Ticket Category', value: categoryName, inline: true },
                 { name: '👨‍💼 Support Role', value: supportRoleName, inline: true },
@@ -390,11 +440,12 @@ module.exports = {
                 { name: '🎉 Received Channel', value: receivedChannelName, inline: true },
                 { name: '📋 Ongoing Channel', value: ongoingChannelName, inline: true },
                 { name: '👑 Bot Owner', value: `<@${config.ownerId}>`, inline: true },
-                { name: '👥 Admins', value: config.adminIds.length > 0 ? `${config.adminIds.length} admin(s)` : 'None', inline: true },
-                { name: '✅ Setup Complete', value: (config.ticketSettings.categoryId && config.ticketSettings.supportRoleId && config.ticketSettings.logChannelId && config.ticketSettings.ordersChannelId && config.ticketSettings.receivedChannelId && config.ticketSettings.ongoingChannelId) ? 'Yes' : 'No', inline: true }
+                { name: '👥 Admins', value: config.adminIds.length > 0 ? `${config.adminIds.length} admin(s)` : 'None set', inline: true },
+                { name: '🎛️ Next Steps', value: setupComplete ? 'Use `!panel create` to create your order panel!' : 'Complete missing settings above', inline: true }
             ])
-            .setColor(config.colors.primary)
-            .setFooter({ text: 'Use !setup <command> to configure missing settings' });
+            .setColor(setupComplete ? config.colors.success : config.colors.warning)
+            .setThumbnail('https://cdn-icons-png.flaticon.com/512/3524/3524659.png')
+            .setFooter({ text: setupComplete ? '🚀 Ready to accept orders!' : '⚙️ Use !setup <command> to configure missing settings' });
 
         message.reply({ embeds: [embed] });
     }
