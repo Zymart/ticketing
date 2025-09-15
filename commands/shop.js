@@ -1,9 +1,15 @@
-// commands/shop.js - Complete shop management system
+// commands/shop.js - Enhanced shop management with PHP currency and file support
 const { EmbedBuilder } = require('discord.js');
 const database = require('../systems/database');
 
 // Use global config
 const config = global.config;
+
+// Exchange rates (update these regularly or fetch from an API)
+const EXCHANGE_RATES = {
+    USD_TO_PHP: 56.50, // 1 USD = 56.50 PHP
+    PHP_TO_USD: 0.0177  // 1 PHP = 0.0177 USD
+};
 
 // Helper function to check permissions
 function hasPermission(userId) {
@@ -12,13 +18,13 @@ function hasPermission(userId) {
 
 module.exports = {
     name: 'shop',
-    description: 'Complete shop management and item trading system',
+    description: 'Complete shop management with PHP currency support',
     
     async execute(message, args, client) {
         if (!args[0]) {
             const embed = new EmbedBuilder()
                 .setTitle('🛍️ Real Item Marketplace & Shop System')
-                .setDescription('**Professional item trading and shop management!**')
+                .setDescription('**Professional item trading with PayPal & GCash support!**')
                 .addFields([
                     { 
                         name: '🎛️ **Panel Management**', 
@@ -27,28 +33,28 @@ module.exports = {
                     },
                     { 
                         name: '📦 **Item Management** (Admins Only)', 
-                        value: '`!shop add-item Name | Price | Category | Description | Stock | URL`\n`!shop list` - View all items\n`!shop remove <item_id>` - Remove item\n`!shop edit <item_id>` - Edit item details', 
+                        value: '`!shop add-item` - Add item with form (recommended)\n`!shop add-item-quick Name | Price | Category | Description | Stock` - Quick add\n`!shop list` - View all items\n`!shop remove <item_id>` - Remove item', 
+                        inline: false 
+                    },
+                    { 
+                        name: '💰 **Currency Support**', 
+                        value: '`USD ↔ PHP conversion (1 USD = ₱56.50)`\n`PayPal (USD/PHP) • GCash (PHP only)`\n`Automatic price conversion`', 
                         inline: false 
                     },
                     { 
                         name: '🏪 **Category Management**', 
-                        value: '`!shop categories` - List all categories\n`!shop category <n>` - View category items\n`!shop restock <item_id> <amount>` - Restock item', 
+                        value: '`!shop categories` - List all categories\n`!shop category <name>` - View category items\n`!shop restock <item_id> <amount>` - Restock item', 
                         inline: false 
                     },
                     { 
                         name: '📊 **Analytics & Reports**', 
-                        value: '`!shop sales` - Sales analytics\n`!shop popular` - Most popular items\n`!shop revenue` - Revenue tracking\n`!shop customers` - Customer insights', 
-                        inline: false 
-                    },
-                    { 
-                        name: '🔄 **Trading System**', 
-                        value: '`!shop trade @user` - Start trade request\n`!shop trades` - View active trades\n`!shop middleman` - Request middleman service', 
+                        value: '`!shop sales` - Sales analytics\n`!shop popular` - Most popular items\n`!shop revenue` - Revenue tracking (USD/PHP)', 
                         inline: false 
                     }
                 ])
                 .setColor(config.colors.primary)
                 .setThumbnail('https://cdn-icons-png.flaticon.com/512/3081/3081648.png')
-                .setFooter({ text: '💎 Real Item Trading • 🛡️ Secure Marketplace • 💰 Professional Commerce' });
+                .setFooter({ text: '💎 PayPal & GCash • 🇵🇭 PHP Support • 🛡️ Secure Marketplace' });
             
             return message.reply({ embeds: [embed] });
         }
@@ -60,16 +66,22 @@ module.exports = {
                 await this.createPanel(message, args[1], client);
                 break;
             case 'add-item':
-                // Handle from index.js for special parsing
+                if (args.length > 1) {
+                    // Quick add with text
+                    await this.executeAddItemQuick(message, args.slice(1).join(' '), client);
+                } else {
+                    // Show instructions for modal form
+                    await this.showAddItemInstructions(message);
+                }
+                break;
+            case 'add-item-quick':
+                await this.executeAddItemQuick(message, args.slice(1).join(' '), client);
                 break;
             case 'list':
                 await this.listItems(message, client);
                 break;
             case 'remove':
                 await this.removeItem(message, args[1], client);
-                break;
-            case 'edit':
-                await this.editItem(message, args[1], client);
                 break;
             case 'categories':
                 await this.listCategories(message, client);
@@ -92,17 +104,8 @@ module.exports = {
             case 'revenue':
                 await this.showRevenue(message, client);
                 break;
-            case 'customers':
-                await this.showCustomers(message, client);
-                break;
-            case 'trade':
-                await this.initiateTrade(message, args[1], client);
-                break;
-            case 'trades':
-                await this.showTrades(message, client);
-                break;
-            case 'middleman':
-                await this.requestMiddleman(message, client);
+            case 'convert':
+                await this.convertCurrency(message, args[1], args[2]);
                 break;
             case 'preview':
                 await this.previewShop(message, client);
@@ -112,38 +115,85 @@ module.exports = {
         }
     },
 
-    async executeAddItem(message, itemData) {
+    // Show instructions for using the modal form
+    async showAddItemInstructions(message) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can add items to the shop.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('📦 Add Item to Shop - Two Methods')
+            .setDescription('**Choose your preferred method to add items:**')
+            .addFields([
+                { 
+                    name: '🎛️ **Method 1: Interactive Form (Recommended)**', 
+                    value: '• Go to any shop panel\n• Click "Manage Shop" button\n• Click "Add New Item" button\n• Fill out the form with image upload support\n• ✅ **Supports file uploads for images**', 
+                    inline: false 
+                },
+                { 
+                    name: '⚡ **Method 2: Quick Text Command**', 
+                    value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`\n\n**Example:**\n`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
+                    inline: false 
+                },
+                { 
+                    name: '💰 **Currency Examples**', 
+                    value: '**USD:** `25.50` (will show as ₱1437 PHP)\n**PHP:** `1400` (will show as $24.78 USD)\n**Flexible:** `$10-15` or `₱500-800`', 
+                    inline: true 
+                },
+                { 
+                    name: '🏷️ **Categories**', 
+                    value: 'Roblox, Fortnite, Minecraft, Steam, Accounts, Currency, Skins, Limited, Other', 
+                    inline: true 
+                },
+                { 
+                    name: '📸 **Image Upload**', 
+                    value: 'Form method supports:\n• Direct file upload\n• Drag & drop images\n• PNG, JPG, GIF, WebP', 
+                    inline: true 
+                }
+            ])
+            .setColor(config.colors.primary)
+            .setFooter({ text: 'PayPal & GCash accepted • Auto USD/PHP conversion' });
+
+        message.reply({ embeds: [embed] });
+    },
+
+    // Quick add item method (text-based)
+    async executeAddItemQuick(message, itemData, client) {
         if (!hasPermission(message.author.id)) {
             return message.reply('❌ Only admins can add items to the shop.');
         }
 
         if (!itemData) {
-            const embed = new EmbedBuilder()
-                .setTitle('📦 Add Item to Shop')
-                .setDescription('**Format:** `!shop add-item Name | Price | Category | Description | Stock | Image URL`')
-                .addFields([
-                    { name: '📝 **Example:**', value: '`!shop add-item Dominus Crown | 250.00 | Roblox | Rare limited Dominus hat from 2010 | 1 | https://example.com/image.png`', inline: false },
-                    { name: '💡 **Field Explanations:**', value: '**Name:** Item display name\n**Price:** USD price (no $ symbol)\n**Category:** Roblox, Fortnite, Steam, etc.\n**Description:** Detailed item description\n**Stock:** Number available (-1 for unlimited)\n**Image URL:** Direct image link (optional)', inline: false },
-                    { name: '🏷️ **Categories:**', value: 'Roblox, Fortnite, Minecraft, Steam, Accounts, Currency, Skins, Limited, Other', inline: false }
-                ])
-                .setColor(config.colors.primary);
-            
-            return message.reply({ embeds: [embed] });
+            return this.showAddItemInstructions(message);
         }
 
         try {
             const parts = itemData.split('|').map(part => part.trim());
             
             if (parts.length < 4) {
-                return message.reply('❌ Invalid format! Use: `!shop add-item Name | Price | Category | Description | Stock | Image URL`');
+                return message.reply('❌ Invalid format! Use: `!shop add-item-quick Name | Price | Category | Description | Stock | Image URL`');
             }
 
             const [name, priceStr, category, description, stockStr = '-1', imageUrl = ''] = parts;
-            const price = parseFloat(priceStr);
+            
+            // Parse price (support both USD and PHP)
+            let price;
+            let currency = 'USD';
+            
+            if (priceStr.toLowerCase().includes('php') || priceStr.includes('₱')) {
+                // PHP price
+                const phpAmount = parseFloat(priceStr.replace(/[^\d.]/g, ''));
+                price = phpAmount * EXCHANGE_RATES.PHP_TO_USD;
+                currency = 'PHP';
+            } else {
+                // USD price
+                price = parseFloat(priceStr.replace(/[^\d.]/g, ''));
+            }
+
             const stock = parseInt(stockStr);
 
             if (isNaN(price) || price < 0) {
-                return message.reply('❌ Invalid price! Please enter a valid number.');
+                return message.reply('❌ Invalid price! Use format: `25.50` (USD) or `₱1400` (PHP)');
             }
 
             if (isNaN(stock)) {
@@ -163,15 +213,21 @@ module.exports = {
             const itemId = await database.createShopItem(itemDataObj);
             
             if (itemId) {
+                const pricePHP = (price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
+                
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Item Added Successfully!')
                     .setDescription(`**${name}** has been added to the marketplace!`)
                     .addFields([
                         { name: '🆔 Item ID', value: itemId.toString(), inline: true },
-                        { name: '💰 Price', value: `$${price.toFixed(2)}`, inline: true },
+                        { name: '💰 Price (USD)', value: `$${price.toFixed(2)}`, inline: true },
+                        { name: '🇵🇭 Price (PHP)', value: `₱${pricePHP}`, inline: true },
                         { name: '📂 Category', value: category, inline: true },
                         { name: '📦 Stock', value: stock === -1 ? 'Unlimited' : stock.toString(), inline: true },
                         { name: '👤 Added By', value: message.author.tag, inline: true },
+                        { name: '💳 Payment Methods', value: 'PayPal (USD/PHP) • GCash (PHP)', inline: true },
+                        { name: '🔄 Exchange Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
+                        { name: '📊 Original Input', value: `${currency} ${currency === 'PHP' ? '₱' + (price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0) : '$' + price.toFixed(2)}`, inline: true },
                         { name: '📝 Description', value: description.slice(0, 200), inline: false }
                     ])
                     .setColor(config.colors.success)
@@ -209,11 +265,12 @@ module.exports = {
             
             const embed = new EmbedBuilder()
                 .setTitle('✅ Shop Panel Created!')
-                .setDescription(`Professional shop panel created in ${channel}!`)
+                .setDescription(`Professional shop panel with PayPal & GCash support created in ${channel}!`)
                 .addFields([
-                    { name: '🏪 Features', value: 'Real item marketplace\nSecure trading system\nCategory browsing\nPurchase channels', inline: true },
+                    { name: '🏪 Features', value: 'Real item marketplace\nPayPal & GCash payments\nUSD/PHP conversion\nCategory browsing', inline: true },
                     { name: '💎 Ready For', value: 'Roblox items\nGame accounts\nDigital goods\nCrypto trading', inline: true },
-                    { name: '🚀 Next Steps', value: 'Add items with `!shop add-item`\nMonitor with `!shop stats`\nManage with admin commands', inline: true }
+                    { name: '🚀 Next Steps', value: 'Add items with `!shop add-item`\nMonitor with `!shop stats`\nManage currencies', inline: true },
+                    { name: '💰 Currency Info', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}\nAuto conversion enabled\nBoth currencies supported`, inline: false }
                 ])
                 .setColor(config.colors.success);
 
@@ -241,7 +298,7 @@ module.exports = {
                 .setDescription('All items currently in the marketplace:')
                 .setColor(config.colors.primary);
 
-            // Group items by category
+            // Group items by category with currency display
             const categories = {};
             items.forEach(item => {
                 const cat = item.category || 'Other';
@@ -253,7 +310,8 @@ module.exports = {
                 const categoryItems = categories[category];
                 const itemsList = categoryItems.slice(0, 5).map(item => {
                     const stock = item.stock === -1 ? '∞' : item.stock;
-                    return `**${item.name}** - $${item.price} (${stock} left)`;
+                    const pricePHP = (item.price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
+                    return `**${item.name}** - $${item.price} (₱${pricePHP}) - ${stock} left`;
                 }).join('\n');
 
                 embed.addFields([{
@@ -271,6 +329,12 @@ module.exports = {
                 }]);
             }
 
+            embed.addFields([{
+                name: '💰 Currency Info',
+                value: `Exchange Rate: 1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}\nPayment: PayPal (USD/PHP) • GCash (PHP)`,
+                inline: false
+            }]);
+
             embed.setFooter({ text: 'Use !shop category <name> to view specific categories' });
             message.reply({ embeds: [embed] });
         } catch (error) {
@@ -279,56 +343,38 @@ module.exports = {
         }
     },
 
-    async removeItem(message, itemId, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can remove shop items.');
-        }
-
-        if (!itemId) {
-            return message.reply('❌ Please provide an item ID! Use `!shop list` to see item IDs.');
-        }
-
-        // Placeholder for now
-        message.reply('🚧 Item removal feature coming soon! For now, manually edit the database.');
-    },
-
-    async editItem(message, itemId, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can edit shop items.');
-        }
-
-        if (!itemId) {
-            return message.reply('❌ Please provide an item ID! Use `!shop list` to see item IDs.');
-        }
-
-        message.reply('🚧 Item editing feature coming soon!');
-    },
-
     async showStats(message, client) {
         try {
             const items = await database.getShopItems();
             const categories = [...new Set(items.map(item => item.category))];
-            const totalValue = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
+            const totalValueUSD = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
+            const totalValuePHP = totalValueUSD * EXCHANGE_RATES.USD_TO_PHP;
             const inStock = items.filter(item => item.stock !== 0).length;
             const unlimited = items.filter(item => item.stock === -1).length;
 
             const embed = new EmbedBuilder()
                 .setTitle('📊 Shop Statistics & Analytics')
+                .setDescription('**Complete marketplace overview with PHP currency support**')
                 .addFields([
                     { name: '📦 Total Items', value: items.length.toString(), inline: true },
                     { name: '📂 Categories', value: categories.length.toString(), inline: true },
-                    { name: '💰 Total Value', value: `$${totalValue.toFixed(2)}`, inline: true },
                     { name: '✅ In Stock', value: inStock.toString(), inline: true },
+                    { name: '💰 Total Value (USD)', value: `$${totalValueUSD.toFixed(2)}`, inline: true },
+                    { name: '🇵🇭 Total Value (PHP)', value: `₱${totalValuePHP.toFixed(0)}`, inline: true },
                     { name: '♾️ Unlimited Stock', value: unlimited.toString(), inline: true },
-                    { name: '📈 Avg Price', value: `$${items.length > 0 ? (totalValue / items.length).toFixed(2) : '0.00'}`, inline: true }
+                    { name: '📈 Avg Price (USD)', value: `$${items.length > 0 ? (totalValueUSD / items.length).toFixed(2) : '0.00'}`, inline: true },
+                    { name: '📈 Avg Price (PHP)', value: `₱${items.length > 0 ? (totalValuePHP / items.length).toFixed(0) : '0'}`, inline: true },
+                    { name: '🔄 Exchange Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true }
                 ])
                 .setColor(config.colors.primary)
                 .setTimestamp();
 
             if (categories.length > 0) {
                 const topCategories = categories.slice(0, 5).map(cat => {
-                    const count = items.filter(item => item.category === cat).length;
-                    return `**${cat}:** ${count} items`;
+                    const catItems = items.filter(item => item.category === cat);
+                    const count = catItems.length;
+                    const value = catItems.reduce((sum, item) => sum + parseFloat(item.price), 0);
+                    return `**${cat}:** ${count} items (${value.toFixed(2)} / ₱${(value * EXCHANGE_RATES.USD_TO_PHP).toFixed(0)})`;
                 }).join('\n');
 
                 embed.addFields([{
@@ -338,11 +384,62 @@ module.exports = {
                 }]);
             }
 
+            embed.addFields([{
+                name: '💳 Payment Methods Supported',
+                value: 'PayPal (accepts USD & PHP) • GCash (PHP only) • Automatic conversion',
+                inline: false
+            }]);
+
             message.reply({ embeds: [embed] });
         } catch (error) {
             console.error('Error showing shop stats:', error);
             message.reply('❌ Error retrieving shop statistics.');
         }
+    },
+
+    async convertCurrency(message, amount, fromCurrency) {
+        if (!amount || !fromCurrency) {
+            const embed = new EmbedBuilder()
+                .setTitle('💱 Currency Converter')
+                .setDescription('Convert between USD and Philippine Peso')
+                .addFields([
+                    { name: 'Usage', value: '`!shop convert <amount> <from>`', inline: false },
+                    { name: 'Examples', value: '`!shop convert 25 USD`\n`!shop convert 1400 PHP`', inline: false },
+                    { name: 'Current Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: false }
+                ])
+                .setColor(config.colors.primary);
+            return message.reply({ embeds: [embed] });
+        }
+
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount)) {
+            return message.reply('❌ Invalid amount! Please enter a number.');
+        }
+
+        const from = fromCurrency.toUpperCase();
+        let result, resultCurrency;
+
+        if (from === 'USD' || from === ') {
+            result = (numAmount * EXCHANGE_RATES.USD_TO_PHP).toFixed(2);
+            resultCurrency = 'PHP';
+        } else if (from === 'PHP' || from === '₱') {
+            result = (numAmount * EXCHANGE_RATES.PHP_TO_USD).toFixed(2);
+            resultCurrency = 'USD';
+        } else {
+            return message.reply('❌ Invalid currency! Use USD or PHP.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('💱 Currency Conversion')
+            .addFields([
+                { name: 'From', value: `${from === 'USD' || from === ' ? ' : '₱'}${numAmount}`, inline: true },
+                { name: 'To', value: `${resultCurrency === 'USD' ? ' : '₱'}${result}`, inline: true },
+                { name: 'Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true }
+            ])
+            .setColor(config.colors.success)
+            .setTimestamp();
+
+        message.reply({ embeds: [embed] });
     },
 
     async showCategory(message, categoryName, client) {
@@ -362,16 +459,17 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setTitle(`📂 ${categoryName} Items (${categoryItems.length})`)
-                .setDescription(`All items in the **${categoryName}** category:`)
+                .setDescription(`All items in the **${categoryName}** category with dual currency pricing:`)
                 .setColor(config.colors.primary);
 
             categoryItems.slice(0, 10).forEach((item, index) => {
                 const stock = item.stock === -1 ? 'Unlimited' : item.stock === 0 ? 'Out of Stock' : `${item.stock} left`;
                 const stockEmoji = item.stock === 0 ? '❌' : item.stock <= 5 && item.stock !== -1 ? '⚠️' : '✅';
+                const pricePHP = (item.price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
                 
                 embed.addFields([{
-                    name: `${stockEmoji} ${item.name} - $${item.price}`,
-                    value: `**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 100)}${item.description.length > 100 ? '...' : ''}`,
+                    name: `${stockEmoji} ${item.name}`,
+                    value: `**USD:** ${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
                     inline: true
                 }]);
             });
@@ -383,6 +481,12 @@ module.exports = {
                     inline: false
                 }]);
             }
+
+            embed.addFields([{
+                name: '💳 Payment Info',
+                value: `PayPal: USD/PHP accepted • GCash: PHP only • Rate: 1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`,
+                inline: false
+            }]);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
@@ -408,24 +512,87 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setTitle('📂 Shop Categories')
-                .setDescription('Available categories in the marketplace:')
+                .setDescription('Available categories in the marketplace with dual currency values:')
                 .setColor(config.colors.primary);
 
             Object.keys(categories).forEach(category => {
                 const items = categories[category];
-                const totalValue = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
+                const totalValueUSD = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
+                const totalValuePHP = totalValueUSD * EXCHANGE_RATES.USD_TO_PHP;
                 embed.addFields([{
                     name: `${this.getCategoryEmoji(category)} ${category}`,
-                    value: `**Items:** ${items.length}\n**Total Value:** $${totalValue.toFixed(2)}\n**Avg Price:** $${(totalValue / items.length).toFixed(2)}`,
+                    value: `**Items:** ${items.length}\n**Value USD:** ${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** ${(totalValueUSD / items.length).toFixed(2)}`,
                     inline: true
                 }]);
             });
 
-            embed.setFooter({ text: 'Use !shop category <name> to view items in a category' });
+            embed.setFooter({ text: 'Use !shop category <name> to view items • PayPal & GCash accepted' });
             message.reply({ embeds: [embed] });
         } catch (error) {
             message.reply('❌ Error retrieving categories.');
         }
+    },
+
+    async showSales(message, client) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can view sales analytics.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('📈 Sales Analytics')
+            .setDescription('Detailed sales data with PHP currency support')
+            .addFields([
+                { name: '💰 Today\'s Sales (USD)', value: '$0.00', inline: true },
+                { name: '🇵🇭 Today\'s Sales (PHP)', value: '₱0.00', inline: true },
+                { name: '📊 This Week', value: '$0.00 (₱0.00)', inline: true },
+                { name: '📈 This Month', value: '$0.00 (₱0.00)', inline: true },
+                { name: '🏆 Best Seller', value: 'No sales yet', inline: true },
+                { name: '👥 Customers', value: '0', inline: true },
+                { name: '💳 Payment Methods', value: 'PayPal: 0% • GCash: 0%', inline: true },
+                { name: '🔄 Currency Split', value: 'USD: 0% • PHP: 0%', inline: true },
+                { name: '📦 Orders', value: '0', inline: true },
+                { name: '🚧 Status', value: 'Sales tracking will be implemented with purchase system', inline: false }
+            ])
+            .setColor(config.colors.primary);
+
+        message.reply({ embeds: [embed] });
+    },
+
+    async showRevenue(message, client) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can view revenue data.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('💰 Revenue Tracking')
+            .setDescription('Financial performance with dual currency support')
+            .addFields([
+                { name: '💵 Total Revenue (USD)', value: '$0.00', inline: true },
+                { name: '🇵🇭 Total Revenue (PHP)', value: '₱0.00', inline: true },
+                { name: '📈 Monthly Growth', value: '0%', inline: true },
+                { name: '💎 Avg Order Value (USD)', value: '$0.00', inline: true },
+                { name: '💎 Avg Order Value (PHP)', value: '₱0.00', inline: true },
+                { name: '💳 PayPal Revenue', value: '$0.00', inline: true },
+                { name: '🇵🇭 GCash Revenue', value: '₱0.00', inline: true },
+                { name: '🔄 Exchange Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
+                { name: '📊 Currency Preference', value: 'USD: 0% • PHP: 0%', inline: true },
+                { name: '🚧 Note', value: 'Revenue tracking will be implemented with payment processing', inline: false }
+            ])
+            .setColor(config.colors.success);
+
+        message.reply({ embeds: [embed] });
+    },
+
+    async removeItem(message, itemId, client) {
+        if (!hasPermission(message.author.id)) {
+            return message.reply('❌ Only admins can remove shop items.');
+        }
+
+        if (!itemId) {
+            return message.reply('❌ Please provide an item ID! Use `!shop list` to see item IDs.');
+        }
+
+        message.reply('🚧 Item removal feature coming soon! For now, manually edit the database.');
     },
 
     async restockItem(message, itemId, amount, client) {
@@ -440,118 +607,15 @@ module.exports = {
         message.reply('🚧 Restock feature coming soon! Manual database editing required for now.');
     },
 
-    async showSales(message, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can view sales analytics.');
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('📈 Sales Analytics')
-            .setDescription('Detailed sales data and performance metrics')
-            .addFields([
-                { name: '💰 Today\'s Sales', value: '$0.00', inline: true },
-                { name: '📊 This Week', value: '$0.00', inline: true },
-                { name: '📈 This Month', value: '$0.00', inline: true },
-                { name: '🏆 Best Seller', value: 'No sales yet', inline: true },
-                { name: '👥 Customers', value: '0', inline: true },
-                { name: '📦 Orders', value: '0', inline: true },
-                { name: '🚧 Status', value: 'Sales tracking will be implemented with purchase system', inline: false }
-            ])
-            .setColor(config.colors.primary);
-
-        message.reply({ embeds: [embed] });
-    },
-
     async showPopular(message, client) {
         const embed = new EmbedBuilder()
             .setTitle('🔥 Popular Items')
-            .setDescription('Most viewed and purchased items')
+            .setDescription('Most viewed and purchased items with currency data')
             .addFields([
-                { name: '🚧 Coming Soon', value: 'Popular items tracking will be available when purchase system is complete', inline: false }
+                { name: '🚧 Coming Soon', value: 'Popular items tracking with PHP currency support will be available when purchase system is complete', inline: false },
+                { name: '📊 Will Include', value: '• Most purchased items\n• Revenue by currency\n• PayPal vs GCash preferences\n• Category popularity', inline: false }
             ])
             .setColor(config.colors.primary);
-
-        message.reply({ embeds: [embed] });
-    },
-
-    async showRevenue(message, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can view revenue data.');
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('💰 Revenue Tracking')
-            .setDescription('Financial performance and revenue analytics')
-            .addFields([
-                { name: '💵 Total Revenue', value: '$0.00', inline: true },
-                { name: '📈 Monthly Growth', value: '0%', inline: true },
-                { name: '💎 Avg Order Value', value: '$0.00', inline: true },
-                { name: '🚧 Note', value: 'Revenue tracking will be implemented with payment processing', inline: false }
-            ])
-            .setColor(config.colors.success);
-
-        message.reply({ embeds: [embed] });
-    },
-
-    async showCustomers(message, client) {
-        if (!hasPermission(message.author.id)) {
-            return message.reply('❌ Only admins can view customer data.');
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('👥 Customer Insights')
-            .setDescription('Customer analytics and behavior data')
-            .addFields([
-                { name: '👤 Total Customers', value: '0', inline: true },
-                { name: '🆕 New This Month', value: '0', inline: true },
-                { name: '🔄 Returning Customers', value: '0', inline: true },
-                { name: '🚧 Status', value: 'Customer analytics will be available with full purchase system', inline: false }
-            ])
-            .setColor(config.colors.primary);
-
-        message.reply({ embeds: [embed] });
-    },
-
-    async initiateTrade(message, userArg, client) {
-        if (!userArg) {
-            return message.reply('❌ Please mention a user to trade with! Usage: `!shop trade @user`');
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('🔄 Trading System')
-            .setDescription('Direct player-to-player trading with middleman protection')
-            .addFields([
-                { name: '🚧 Coming Soon', value: 'Advanced trading system is in development!', inline: false },
-                { name: '🔮 Planned Features', value: '• Trade requests & negotiations\n• Middleman escrow service\n• Trade history & reputation\n• Multi-item trade support\n• Automated trade completion', inline: false }
-            ])
-            .setColor(config.colors.warning);
-
-        message.reply({ embeds: [embed] });
-    },
-
-    async showTrades(message, client) {
-        const embed = new EmbedBuilder()
-            .setTitle('🔄 Active Trades')
-            .setDescription('Your current trading activity')
-            .addFields([
-                { name: '📋 No Active Trades', value: 'You don\'t have any active trades right now.', inline: false },
-                { name: '💡 Start Trading', value: 'Use `!shop trade @user` to initiate a trade', inline: false }
-            ])
-            .setColor(config.colors.primary);
-
-        message.reply({ embeds: [embed] });
-    },
-
-    async requestMiddleman(message, client) {
-        const embed = new EmbedBuilder()
-            .setTitle('🛡️ Middleman Service')
-            .setDescription('Professional trade protection and escrow service')
-            .addFields([
-                { name: '🔒 Secure Trading', value: 'Our middleman service provides secure trading for high-value items', inline: false },
-                { name: '💼 How It Works', value: '1. Request middleman service\n2. Both parties agree to terms\n3. Items/money held in escrow\n4. Safe exchange completion\n5. Items released to parties', inline: false },
-                { name: '🚧 Status', value: 'Middleman service will be available with full trading system', inline: false }
-            ])
-            .setColor(config.colors.success);
 
         message.reply({ embeds: [embed] });
     },
@@ -562,7 +626,7 @@ module.exports = {
             
             const embed = new EmbedBuilder()
                 .setTitle('🛍️ Shop Preview')
-                .setDescription('Preview of your marketplace layout and featured items')
+                .setDescription('Preview of your marketplace with PayPal & GCash support')
                 .setColor(config.colors.primary);
 
             if (items.length === 0) {
@@ -572,22 +636,32 @@ module.exports = {
                     inline: false
                 }]);
             } else {
-                // Show featured items
+                // Show featured items with dual currency
                 const featuredItems = items.slice(0, 3);
                 featuredItems.forEach(item => {
+                    const pricePHP = (item.price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
                     embed.addFields([{
-                        name: `💎 ${item.name} - $${item.price}`,
-                        value: item.description.slice(0, 100),
+                        name: `💎 ${item.name}`,
+                        value: `**USD:** ${item.price} **PHP:** ₱${pricePHP}\n${item.description.slice(0, 80)}...`,
                         inline: true
                     }]);
                 });
 
+                const totalValueUSD = items.reduce((sum, item) => sum + parseFloat(item.price), 0);
+                const totalValuePHP = totalValueUSD * EXCHANGE_RATES.USD_TO_PHP;
+
                 embed.addFields([{
                     name: '📊 Shop Stats',
-                    value: `**Total Items:** ${items.length}\n**Categories:** ${[...new Set(items.map(i => i.category))].length}\n**Value:** $${items.reduce((sum, item) => sum + parseFloat(item.price), 0).toFixed(2)}`,
+                    value: `**Total Items:** ${items.length}\n**Categories:** ${[...new Set(items.map(i => i.category))].length}\n**Value USD:** ${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Exchange Rate:** 1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`,
                     inline: false
                 }]);
             }
+
+            embed.addFields([{
+                name: '💳 Payment Methods',
+                value: 'PayPal (accepts USD & PHP) • GCash (PHP only) • Automatic conversion',
+                inline: false
+            }]);
 
             message.reply({ embeds: [embed] });
         } catch (error) {
