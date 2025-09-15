@@ -19,33 +19,62 @@ class TicketSystem {
         
         // Handle button interactions for tickets
         client.on('interactionCreate', async (interaction) => {
-            if (interaction.isButton()) {
-                switch (interaction.customId) {
-                    case 'create_ticket':
-                        await this.showOrderForm(interaction);
-                        break;
-                    case 'close_ticket':
-                        await this.closeTicket(interaction);
-                        break;
-                    case 'confirm_close':
-                        await this.finalizeTicketClose(interaction);
-                        break;
-                    case 'cancel_close':
-                        await this.cancelClose(interaction);
-                        break;
-                    case 'claim_order':
-                        await this.claimOrder(interaction);
-                        break;
-                    case 'mark_completed':
-                        await this.markOrderCompleted(interaction);
-                        break;
+            try {
+                if (interaction.isButton()) {
+                    await this.handleButtonInteraction(interaction);
+                } else if (interaction.isModalSubmit() && interaction.customId === 'order_form') {
+                    await this.processOrderForm(interaction);
+                }
+            } catch (error) {
+                console.error('Ticket system interaction error:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({
+                        content: '❌ Something went wrong. Please try again or contact an admin.',
+                        ephemeral: true
+                    }).catch(() => {});
                 }
             }
+        });
+    }
 
-            // Handle modal submissions
-            if (interaction.isModalSubmit() && interaction.customId === 'order_form') {
-                await this.processOrderForm(interaction);
-            }
+    async handleButtonInteraction(interaction) {
+        switch (interaction.customId) {
+            case 'create_ticket':
+                await this.showOrderForm(interaction);
+                break;
+            case 'close_ticket':
+                await this.closeTicket(interaction);
+                break;
+            case 'confirm_close':
+                await this.finalizeTicketClose(interaction);
+                break;
+            case 'cancel_close':
+                await this.cancelClose(interaction);
+                break;
+            case 'claim_order':
+                await this.claimOrder(interaction);
+                break;
+            case 'mark_completed':
+                await this.markOrderCompleted(interaction);
+                break;
+            // Add missing button handlers
+            case 'keep_order_active':
+                await this.keepOrderActive(interaction);
+                break;
+            default:
+                // Handle unknown button interactions gracefully
+                await interaction.reply({
+                    content: '⚠️ This button is not yet implemented. Please contact an admin if you need assistance.',
+                    ephemeral: true
+                });
+        }
+    }
+
+    async keepOrderActive(interaction) {
+        await interaction.update({
+            content: '✅ Order will remain active. Cancellation cancelled.',
+            embeds: [],
+            components: []
         });
     }
 
@@ -78,7 +107,11 @@ class TicketSystem {
                      config.colors.primary)
             .setTimestamp();
 
-        await logChannel.send({ embeds: [embed] });
+        try {
+            await logChannel.send({ embeds: [embed] });
+        } catch (error) {
+            console.error('Error sending log message:', error);
+        }
     }
 
     loadTickets() {
@@ -145,14 +178,14 @@ class TicketSystem {
                 },
                 {
                     name: '💳 **Payment Methods:**',
-                    value: `\`\`\`${panelSettings.payments || '• PayPal • Crypto\n• Gift Cards • Bank Transfer\n• Cashapp • Venmo'}\`\`\``,
+                    value: `\`\`\`• PayPal (USD/PHP)\n• GCash (Philippines)\n• Automatic conversion\n• Secure processing\`\`\``,
                     inline: true
                 }
             ])
             .setColor(config.colors.primary)
             .setThumbnail('https://cdn-icons-png.flaticon.com/512/891/891462.png')
             .setImage('https://via.placeholder.com/400x100/0099ff/ffffff?text=Professional+Gaming+Services')
-            .setFooter({ text: panelSettings.footer || '🛡️ Secure Orders • 💯 Satisfaction Guaranteed • ⭐ Premium Service' });
+            .setFooter({ text: panelSettings.footer || '🛡️ PayPal & GCash • 🇵🇭 PHP Support • ⭐ Premium Service' });
 
         const button = new ActionRowBuilder()
             .addComponents(
@@ -216,9 +249,9 @@ class TicketSystem {
 
         const budgetInput = new TextInputBuilder()
             .setCustomId('budget')
-            .setLabel('Your Budget (USD)')
+            .setLabel('Your Budget (USD or PHP)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Example: $25, $10-15, $50 max, or "flexible"')
+            .setPlaceholder('Example: $25, ₱1400, $10-15, or "flexible"')
             .setRequired(true)
             .setMaxLength(20);
 
@@ -315,11 +348,12 @@ class TicketSystem {
                     { name: '⏰ Urgency', value: `\`${orderData.urgency}\``, inline: true },
                     { name: '📋 Status', value: '🟡 **Pending Review**', inline: true },
                     { name: '🆔 Order ID', value: orderData.orderId, inline: true },
-                    { name: '📝 Order Details', value: `\`\`\`${orderData.details}\`\`\``, inline: false }
+                    { name: '📝 Order Details', value: `\`\`\`${orderData.details}\`\`\``, inline: false },
+                    { name: '💳 Payment Methods', value: 'PayPal (USD/PHP) • GCash (Philippines)', inline: false }
                 ])
                 .setColor(config.colors.warning)
                 .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
-                .setFooter({ text: `Order placed by ${interaction.user.tag} • Our team will respond soon!` })
+                .setFooter({ text: `Order placed by ${interaction.user.tag} • PayPal & GCash accepted` })
                 .setTimestamp();
 
             const orderButtons = new ActionRowBuilder()
@@ -353,7 +387,7 @@ class TicketSystem {
             await this.logOrderAction('created', interaction.user, ticketChannel, orderData);
 
             await interaction.editReply({
-                content: `✅ **Order placed successfully!** ${ticketChannel}\n\n🎯 **Service:** ${orderData.serviceType}\n💰 **Budget:** ${orderData.budget}\n⏰ **Urgency:** ${orderData.urgency}\n\nOur team will review your order and provide exact pricing shortly!`,
+                content: `✅ **Order placed successfully!** ${ticketChannel}\n\n🎯 **Service:** ${orderData.serviceType}\n💰 **Budget:** ${orderData.budget}\n⏰ **Urgency:** ${orderData.urgency}\n💳 **Payment:** PayPal & GCash accepted\n\nOur team will review your order and provide exact pricing shortly!`,
             });
 
         } catch (error) {
@@ -415,8 +449,12 @@ class TicketSystem {
         await interaction.reply({ embeds: [claimEmbed], components: [completionButton] });
 
         // Update channel name to show who claimed it
-        const newName = `${interaction.channel.name}-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-        await interaction.channel.setName(newName);
+        try {
+            const newName = `${interaction.channel.name}-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            await interaction.channel.setName(newName);
+        } catch (error) {
+            console.error('Error updating channel name:', error);
+        }
 
         // Send update to orders channel
         await this.sendOrderUpdate(orderData, 'claimed', interaction.user);
@@ -519,7 +557,7 @@ class TicketSystem {
             ])
             .setColor(config.colors.warning)
             .setThumbnail(orderData.customer.displayAvatarURL({ dynamic: true }))
-            .setFooter({ text: `Order System • ${orderData.customer.tag}` })
+            .setFooter({ text: `Order System • ${orderData.customer.tag} • PayPal & GCash accepted` })
             .setTimestamp();
 
         try {
@@ -608,7 +646,7 @@ class TicketSystem {
             .setColor(config.colors.success)
             .setThumbnail(orderData.customer.displayAvatarURL({ dynamic: true }))
             .setImage('https://via.placeholder.com/400x100/00ff00/ffffff?text=ORDER+COMPLETED+SUCCESSFULLY!')
-            .setFooter({ text: `Order completed by ${completedBy.tag} • Thank you for choosing our service!` })
+            .setFooter({ text: `Order completed by ${completedBy.tag} • PayPal & GCash accepted` })
             .setTimestamp();
 
         try {
@@ -650,7 +688,7 @@ class TicketSystem {
             .setDescription(`**${pendingOrders.length} orders** waiting to be claimed by staff`)
             .setColor(config.colors.warning)
             .setTimestamp()
-            .setFooter({ text: `Last updated • ${pendingOrders.length} unclaimed orders • Orders disappear when claimed` });
+            .setFooter({ text: `Last updated • ${pendingOrders.length} unclaimed orders • PayPal & GCash accepted` });
 
         // Add fields for each pending order
         pendingOrders.slice(0, 10).forEach((order, index) => {
