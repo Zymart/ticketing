@@ -1,16 +1,14 @@
-// events/interactionCreate.js - Handle slash command interactions
+// events/interactionCreate.js - Handle slash command interactions only
 module.exports = {
     name: 'interactionCreate',
     async execute(interaction, client) {
-        // Handle slash commands
+        // Only handle slash commands - other interactions are handled by systems
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
-
             if (!command) {
                 console.error(`No command matching ${interaction.commandName} was found.`);
                 return;
             }
-
             try {
                 await command.execute(interaction);
             } catch (error) {
@@ -20,7 +18,6 @@ module.exports = {
                     content: '❌ There was an error while executing this command!',
                     ephemeral: true
                 };
-
                 if (interaction.replied || interaction.deferred) {
                     await interaction.followUp(errorMessage);
                 } else {
@@ -28,24 +25,10 @@ module.exports = {
                 }
             }
         }
-
-        // Handle button interactions (handled by systems)
-        if (interaction.isButton()) {
-            // Button interactions are handled by the respective systems
-            // (ticketSystem.js and shopSystem.js handle their buttons)
-            return;
-        }
-
-        // Handle select menu interactions
-        if (interaction.isStringSelectMenu()) {
-            // Select menu interactions are handled by systems
-            return;
-        }
-
-        // Handle modal submissions
-        if (interaction.isModalSubmit()) {
-            // Modal submissions are handled by systems
-            return;
-        }
+        
+        // Note: Button interactions, select menus, and modals are handled by:
+        // - ticketSystem.js for order-related interactions
+        // - shopSystem.js for shop-related interactions
+        // This prevents conflicts and ensures proper error handling
     },
 };
