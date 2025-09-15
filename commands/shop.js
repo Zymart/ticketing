@@ -374,7 +374,7 @@ module.exports = {
                     const catItems = items.filter(item => item.category === cat);
                     const count = catItems.length;
                     const value = catItems.reduce((sum, item) => sum + parseFloat(item.price), 0);
-                    return `**${cat}:** ${count} items (${value.toFixed(2)} / ₱${(value * EXCHANGE_RATES.USD_TO_PHP).toFixed(0)})`;
+                    return `**${cat}:** ${count} items ($${value.toFixed(2)} / ₱${(value * EXCHANGE_RATES.USD_TO_PHP).toFixed(0)})`;
                 }).join('\n');
 
                 embed.addFields([{
@@ -419,7 +419,7 @@ module.exports = {
         const from = fromCurrency.toUpperCase();
         let result, resultCurrency;
 
-        if (from === 'USD' || from === ') {
+        if (from === 'USD' || from === '$') {
             result = (numAmount * EXCHANGE_RATES.USD_TO_PHP).toFixed(2);
             resultCurrency = 'PHP';
         } else if (from === 'PHP' || from === '₱') {
@@ -432,8 +432,8 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setTitle('💱 Currency Conversion')
             .addFields([
-                { name: 'From', value: `${from === 'USD' || from === ' ? ' : '₱'}${numAmount}`, inline: true },
-                { name: 'To', value: `${resultCurrency === 'USD' ? ' : '₱'}${result}`, inline: true },
+                { name: 'From', value: `${from === 'USD' || from === '$' ? '$' : '₱'}${numAmount}`, inline: true },
+                { name: 'To', value: `${resultCurrency === 'USD' ? '$' : '₱'}${result}`, inline: true },
                 { name: 'Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true }
             ])
             .setColor(config.colors.success)
@@ -469,7 +469,7 @@ module.exports = {
                 
                 embed.addFields([{
                     name: `${stockEmoji} ${item.name}`,
-                    value: `**USD:** ${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
+                    value: `**USD:** $${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
                     inline: true
                 }]);
             });
@@ -521,7 +521,7 @@ module.exports = {
                 const totalValuePHP = totalValueUSD * EXCHANGE_RATES.USD_TO_PHP;
                 embed.addFields([{
                     name: `${this.getCategoryEmoji(category)} ${category}`,
-                    value: `**Items:** ${items.length}\n**Value USD:** ${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** ${(totalValueUSD / items.length).toFixed(2)}`,
+                    value: `**Items:** ${items.length}\n**Value USD:** $${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** $${(totalValueUSD / items.length).toFixed(2)}`,
                     inline: true
                 }]);
             });
