@@ -33,7 +33,7 @@ module.exports = {
                     },
                     { 
                         name: '📦 **Item Management** (Admins Only)', 
-                        value: '`!shop add-item` - Add item with form (recommended)\n`!shop add-item-quick Name | Price | Category | Description | Stock` - Quick add\n`!shop list` - View all items\n`!shop remove <item_id>` - Remove item', 
+                        value: '`!shop add-item` - Add item with modal form\n`!shop add-item-quick Name | Price | Category | Description | Stock` - Quick add\n`!shop list` - View all items\n`!shop remove <item_id>` - Remove item', 
                         inline: false 
                     },
                     { 
@@ -66,12 +66,13 @@ module.exports = {
                 await this.createPanel(message, args[1], client);
                 break;
             case 'add-item':
+                // Check if this is a quick add or modal form request
                 if (args.length > 1) {
                     // Quick add with text
                     await this.executeAddItemQuick(message, args.slice(1).join(' '), client);
                 } else {
-                    // Show instructions for modal form
-                    await this.showAddItemInstructions(message);
+                    // Modal form - trigger through shop system
+                    await this.triggerAddItemModal(message, client);
                 }
                 break;
             case 'add-item-quick':
@@ -115,46 +116,87 @@ module.exports = {
         }
     },
 
-    // Show instructions for using the modal form
-    async showAddItemInstructions(message) {
+    // New method to trigger the modal form through shop system
+    async triggerAddItemModal(message, client) {
         if (!hasPermission(message.author.id)) {
             return message.reply('❌ Only admins can add items to the shop.');
         }
 
-        const embed = new EmbedBuilder()
-            .setTitle('📦 Add Item to Shop - Two Methods')
-            .setDescription('**Choose your preferred method to add items:**')
-            .addFields([
-                { 
-                    name: '🎛️ **Method 1: Interactive Form (Recommended)**', 
-                    value: '• Go to any shop panel\n• Click "Manage Shop" button\n• Click "Add New Item" button\n• Fill out the form with image upload support\n• ✅ **Supports file uploads for images**', 
-                    inline: false 
-                },
-                { 
-                    name: '⚡ **Method 2: Quick Text Command**', 
-                    value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`\n\n**Example:**\n`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
-                    inline: false 
-                },
-                { 
-                    name: '💰 **Currency Examples**', 
-                    value: '**USD:** `25.50` (will show as ₱1437 PHP)\n**PHP:** `1400` (will show as $24.78 USD)\n**Flexible:** `$10-15` or `₱500-800`', 
-                    inline: true 
-                },
-                { 
-                    name: '🏷️ **Categories**', 
-                    value: 'Roblox, Fortnite, Minecraft, Steam, Accounts, Currency, Skins, Limited, Other', 
-                    inline: true 
-                },
-                { 
-                    name: '📸 **Image Upload**', 
-                    value: 'Form method supports:\n• Direct file upload\n• Drag & drop images\n• PNG, JPG, GIF, WebP', 
-                    inline: true 
-                }
-            ])
-            .setColor(config.colors.primary)
-            .setFooter({ text: 'PayPal & GCash accepted • Auto USD/PHP conversion' });
+        try {
+            const shopSystem = require('../systems/shopSystem');
+            
+            // Create a fake interaction object that the shop system can use
+            const fakeInteraction = {
+                user: message.author,
+                channel: message.channel,
+                guild: message.guild,
+                customId: 'add_item_button',
+                isButton: () => true,
+                showModal: async (modal) => {
+                    // Since we can't show a modal from a text command, we'll show instructions instead
+                    const embed = new EmbedBuilder()
+                        .setTitle('📦 Add Item to Shop')
+                        .setDescription('**To use the interactive form with image upload support:**')
+                        .addFields([
+                            { 
+                                name: '🎛️ **Method 1: Interactive Modal (Recommended)**', 
+                                value: '1. Go to any shop panel in your server\n2. Click "Browse Shop" button\n3. Click "Manage Shop" button (admin only)\n4. Click "Add New Item" button\n5. Fill out the modal form with image upload support', 
+                                inline: false 
+                            },
+                            { 
+                                name: '⚡ **Method 2: Quick Text Command**', 
+                                value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`\n\n**Example:**\n`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
+                                inline: false 
+                            },
+                            { 
+                                name: '💰 **Currency Examples**', 
+                                value: '**USD:** `25.50` (will show as ₱1437 PHP)\n**PHP:** `1400` (will show as $24.78 USD)\n**Flexible:** `$10-15` or `₱500-800`', 
+                                inline: true 
+                            },
+                            { 
+                                name: '🏷️ **Available Categories**', 
+                                value: 'Roblox, Fortnite, Minecraft, Steam, Accounts, Currency, Skins, Limited, Other', 
+                                inline: true 
+                            },
+                            { 
+                                name: '📸 **Image Support**', 
+                                value: 'Modal method supports:\n• Direct file upload\n• Drag & drop images\n• PNG, JPG, GIF, WebP', 
+                                inline: true 
+                            }
+                        ])
+                        .setColor(config.colors.primary)
+                        .setFooter({ text: 'PayPal & GCash accepted • Auto USD/PHP conversion' });
 
-        message.reply({ embeds: [embed] });
+                    return message.reply({ embeds: [embed] });
+                }
+            };
+
+            // Call the shop system's add item modal method
+            await shopSystem.showAddItemModal(fakeInteraction);
+
+        } catch (error) {
+            console.error('Error triggering add item modal:', error);
+            
+            // Fallback to showing instructions
+            const embed = new EmbedBuilder()
+                .setTitle('📦 Add Item to Shop - Instructions')
+                .setDescription('**Use the quick add command for now:**')
+                .addFields([
+                    { 
+                        name: '⚡ **Quick Add Command**', 
+                        value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`', 
+                        inline: false 
+                    },
+                    { 
+                        name: '💡 **Example**', 
+                        value: '`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
+                        inline: false 
+                    }
+                ])
+                .setColor(config.colors.warning);
+            
+            message.reply({ embeds: [embed] });
+        }
     },
 
     // Quick add item method (text-based)
@@ -164,7 +206,17 @@ module.exports = {
         }
 
         if (!itemData) {
-            return this.showAddItemInstructions(message);
+            const embed = new EmbedBuilder()
+                .setTitle('📦 Quick Add Item - Usage')
+                .setDescription('**Format:** `!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`')
+                .addFields([
+                    { name: '💡 Example', value: '`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', inline: false },
+                    { name: '💰 Price Formats', value: '`25.50` (USD) or `₱1400` (PHP)', inline: true },
+                    { name: '📦 Stock', value: '`1`, `5`, `-1` (unlimited)', inline: true },
+                    { name: '📸 Image', value: 'Optional URL or leave blank', inline: true }
+                ])
+                .setColor(config.colors.warning);
+            return message.reply({ embeds: [embed] });
         }
 
         try {
@@ -419,7 +471,7 @@ module.exports = {
         const from = fromCurrency.toUpperCase();
         let result, resultCurrency;
 
-        if (from === 'USD' || from === '$') {
+        if (from === 'USD' || from === ') {
             result = (numAmount * EXCHANGE_RATES.USD_TO_PHP).toFixed(2);
             resultCurrency = 'PHP';
         } else if (from === 'PHP' || from === '₱') {
@@ -432,8 +484,8 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setTitle('💱 Currency Conversion')
             .addFields([
-                { name: 'From', value: `${from === 'USD' || from === '$' ? '$' : '₱'}${numAmount}`, inline: true },
-                { name: 'To', value: `${resultCurrency === 'USD' ? '$' : '₱'}${result}`, inline: true },
+                { name: 'From', value: `${from === 'USD' || from === ' ? ' : '₱'}${numAmount}`, inline: true },
+                { name: 'To', value: `${resultCurrency === 'USD' ? ' : '₱'}${result}`, inline: true },
                 { name: 'Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true }
             ])
             .setColor(config.colors.success)
@@ -469,7 +521,7 @@ module.exports = {
                 
                 embed.addFields([{
                     name: `${stockEmoji} ${item.name}`,
-                    value: `**USD:** $${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
+                    value: `**USD:** ${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
                     inline: true
                 }]);
             });
@@ -521,7 +573,7 @@ module.exports = {
                 const totalValuePHP = totalValueUSD * EXCHANGE_RATES.USD_TO_PHP;
                 embed.addFields([{
                     name: `${this.getCategoryEmoji(category)} ${category}`,
-                    value: `**Items:** ${items.length}\n**Value USD:** $${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** $${(totalValueUSD / items.length).toFixed(2)}`,
+                    value: `**Items:** ${items.length}\n**Value USD:** ${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** ${(totalValueUSD / items.length).toFixed(2)}`,
                     inline: true
                 }]);
             });
