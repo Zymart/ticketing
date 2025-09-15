@@ -8,7 +8,7 @@ const config = {
     clientId: process.env.CLIENT_ID || require('./config.json').clientId,
     guildId: process.env.GUILD_ID || require('./config.json').guildId,
     ownerId: process.env.OWNER_ID || require('./config.json').ownerId || "730629579533844512",
-    adminIds: [],
+    adminIds: process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',') : [],
     ticketSettings: {
         categoryId: process.env.CATEGORY_ID || "",
         supportRoleId: process.env.SUPPORT_ROLE_ID || "",
@@ -48,6 +48,7 @@ try {
     config.clientId = process.env.CLIENT_ID || config.clientId;
     config.guildId = process.env.GUILD_ID || config.guildId;
     config.ownerId = process.env.OWNER_ID || config.ownerId;
+    config.adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',') : (config.adminIds || []);
     if (process.env.CATEGORY_ID) config.ticketSettings.categoryId = process.env.CATEGORY_ID;
     if (process.env.SUPPORT_ROLE_ID) config.ticketSettings.supportRoleId = process.env.SUPPORT_ROLE_ID;
     if (process.env.LOG_CHANNEL_ID) config.ticketSettings.logChannelId = process.env.LOG_CHANNEL_ID;
@@ -107,25 +108,12 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
 
-    // Handle special add-item command
-    if (commandName === 'shop' && args[0] === 'add-item') {
-        const shopCommand = client.prefixCommands.get('shop');
-        if (shopCommand) {
-            const itemData = args.slice(1).join(' ');
-            return await shopCommand.executeAddItem(message, itemData);
-        }
-    }
-
     // Regular command handling
     const command = client.prefixCommands.get(commandName);
     if (!command) return;
 
     try {
-        if (command.executePrefix) {
-            await command.executePrefix(message, args, client);
-        } else {
-            await command.execute(message, args, client);
-        }
+        await command.execute(message, args, client);
     } catch (error) {
         console.error(`Error executing prefix command ${commandName}:`, error);
         message.reply('❌ There was an error executing this command!');
@@ -139,6 +127,12 @@ ticketSystem.init(client);
 // Load shop system
 const shopSystem = require('./systems/shopSystem');
 shopSystem.init(client);
+
+// Handle message events for shop system (for image uploads)
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+    await shopSystem.handleMessage(message);
+});
 
 // Load database system
 const database = require('./systems/database');
