@@ -43,7 +43,7 @@ module.exports = {
                     },
                     { 
                         name: '🏪 **Category Management**', 
-                        value: '`!shop categories` - List all categories\n`!shop category <name>` - View category items\n`!shop restock <item_id> <amount>` - Restock item', 
+                        value: '`!shop categories` - List all categories\n`!shop category <n>` - View category items\n`!shop restock <item_id> <amount>` - Restock item', 
                         inline: false 
                     },
                     { 
@@ -66,12 +66,9 @@ module.exports = {
                 await this.createPanel(message, args[1], client);
                 break;
             case 'add-item':
-                // Check if this is a quick add or modal form request
                 if (args.length > 1) {
-                    // Quick add with text
                     await this.executeAddItemQuick(message, args.slice(1).join(' '), client);
                 } else {
-                    // Modal form - trigger through shop system
                     await this.triggerAddItemModal(message, client);
                 }
                 break;
@@ -116,90 +113,47 @@ module.exports = {
         }
     },
 
-    // New method to trigger the modal form through shop system
     async triggerAddItemModal(message, client) {
         if (!hasPermission(message.author.id)) {
             return message.reply('❌ Only admins can add items to the shop.');
         }
 
-        try {
-            const shopSystem = require('../systems/shopSystem');
-            
-            // Create a fake interaction object that the shop system can use
-            const fakeInteraction = {
-                user: message.author,
-                channel: message.channel,
-                guild: message.guild,
-                customId: 'add_item_button',
-                isButton: () => true,
-                showModal: async (modal) => {
-                    // Since we can't show a modal from a text command, we'll show instructions instead
-                    const embed = new EmbedBuilder()
-                        .setTitle('📦 Add Item to Shop')
-                        .setDescription('**To use the interactive form with image upload support:**')
-                        .addFields([
-                            { 
-                                name: '🎛️ **Method 1: Interactive Modal (Recommended)**', 
-                                value: '1. Go to any shop panel in your server\n2. Click "Browse Shop" button\n3. Click "Manage Shop" button (admin only)\n4. Click "Add New Item" button\n5. Fill out the modal form with image upload support', 
-                                inline: false 
-                            },
-                            { 
-                                name: '⚡ **Method 2: Quick Text Command**', 
-                                value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`\n\n**Example:**\n`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
-                                inline: false 
-                            },
-                            { 
-                                name: '💰 **Currency Examples**', 
-                                value: '**USD:** `25.50` (will show as ₱1437 PHP)\n**PHP:** `1400` (will show as $24.78 USD)\n**Flexible:** `$10-15` or `₱500-800`', 
-                                inline: true 
-                            },
-                            { 
-                                name: '🏷️ **Available Categories**', 
-                                value: 'Roblox, Fortnite, Minecraft, Steam, Accounts, Currency, Skins, Limited, Other', 
-                                inline: true 
-                            },
-                            { 
-                                name: '📸 **Image Support**', 
-                                value: 'Modal method supports:\n• Direct file upload\n• Drag & drop images\n• PNG, JPG, GIF, WebP', 
-                                inline: true 
-                            }
-                        ])
-                        .setColor(config.colors.primary)
-                        .setFooter({ text: 'PayPal & GCash accepted • Auto USD/PHP conversion' });
-
-                    return message.reply({ embeds: [embed] });
+        const embed = new EmbedBuilder()
+            .setTitle('📦 Add Item to Shop')
+            .setDescription('**To use the interactive form with image upload support:**')
+            .addFields([
+                { 
+                    name: '🎛️ **Method 1: Interactive Modal (Recommended)**', 
+                    value: '1. Go to any shop panel in your server\n2. Click "Browse Shop" button\n3. Click "Manage Shop" button (admin only)\n4. Click "Add New Item" button\n5. Fill out the modal form with image upload support', 
+                    inline: false 
+                },
+                { 
+                    name: '⚡ **Method 2: Quick Text Command**', 
+                    value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`\n\n**Example:**\n`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
+                    inline: false 
+                },
+                { 
+                    name: '💰 **Currency Examples**', 
+                    value: '**USD:** `25.50` (will show as ₱1437 PHP)\n**PHP:** `1400` (will show as $24.78 USD)\n**Flexible:** `$10-15` or `₱500-800`', 
+                    inline: true 
+                },
+                { 
+                    name: '🏷️ **Available Categories**', 
+                    value: 'Roblox, Fortnite, Minecraft, Steam, Accounts, Currency, Skins, Limited, Other', 
+                    inline: true 
+                },
+                { 
+                    name: '📸 **Image Support**', 
+                    value: 'Modal method supports:\n• Direct file upload\n• Drag & drop images\n• PNG, JPG, GIF, WebP', 
+                    inline: true 
                 }
-            };
+            ])
+            .setColor(config.colors.primary)
+            .setFooter({ text: 'PayPal & GCash accepted • Auto USD/PHP conversion' });
 
-            // Call the shop system's add item modal method
-            await shopSystem.showAddItemModal(fakeInteraction);
-
-        } catch (error) {
-            console.error('Error triggering add item modal:', error);
-            
-            // Fallback to showing instructions
-            const embed = new EmbedBuilder()
-                .setTitle('📦 Add Item to Shop - Instructions')
-                .setDescription('**Use the quick add command for now:**')
-                .addFields([
-                    { 
-                        name: '⚡ **Quick Add Command**', 
-                        value: '`!shop add-item-quick Name | Price | Category | Description | Stock | ImageURL`', 
-                        inline: false 
-                    },
-                    { 
-                        name: '💡 **Example**', 
-                        value: '`!shop add-item-quick Dominus Crown | 250.00 | Roblox | Rare limited hat | 1 | https://example.com/image.png`', 
-                        inline: false 
-                    }
-                ])
-                .setColor(config.colors.warning);
-            
-            message.reply({ embeds: [embed] });
-        }
+        message.reply({ embeds: [embed] });
     },
 
-    // Quick add item method (text-based)
     async executeAddItemQuick(message, itemData, client) {
         if (!hasPermission(message.author.id)) {
             return message.reply('❌ Only admins can add items to the shop.');
@@ -228,17 +182,14 @@ module.exports = {
 
             const [name, priceStr, category, description, stockStr = '-1', imageUrl = ''] = parts;
             
-            // Parse price (support both USD and PHP)
             let price;
             let currency = 'USD';
             
             if (priceStr.toLowerCase().includes('php') || priceStr.includes('₱')) {
-                // PHP price
                 const phpAmount = parseFloat(priceStr.replace(/[^\d.]/g, ''));
                 price = phpAmount * EXCHANGE_RATES.PHP_TO_USD;
                 currency = 'PHP';
             } else {
-                // USD price
                 price = parseFloat(priceStr.replace(/[^\d.]/g, ''));
             }
 
@@ -350,7 +301,6 @@ module.exports = {
                 .setDescription('All items currently in the marketplace:')
                 .setColor(config.colors.primary);
 
-            // Group items by category with currency display
             const categories = {};
             items.forEach(item => {
                 const cat = item.category || 'Other';
@@ -387,7 +337,7 @@ module.exports = {
                 inline: false
             }]);
 
-            embed.setFooter({ text: 'Use !shop category <name> to view specific categories' });
+            embed.setFooter({ text: 'Use !shop category <n> to view specific categories' });
             message.reply({ embeds: [embed] });
         } catch (error) {
             console.error('Error listing shop items:', error);
@@ -471,7 +421,7 @@ module.exports = {
         const from = fromCurrency.toUpperCase();
         let result, resultCurrency;
 
-        if (from === 'USD' || from === ') {
+        if (from === 'USD' || from === '$') {
             result = (numAmount * EXCHANGE_RATES.USD_TO_PHP).toFixed(2);
             resultCurrency = 'PHP';
         } else if (from === 'PHP' || from === '₱') {
@@ -484,8 +434,8 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setTitle('💱 Currency Conversion')
             .addFields([
-                { name: 'From', value: `${from === 'USD' || from === ' ? ' : '₱'}${numAmount}`, inline: true },
-                { name: 'To', value: `${resultCurrency === 'USD' ? ' : '₱'}${result}`, inline: true },
+                { name: 'From', value: `${from === 'USD' || from === '$' ? '$' : '₱'}${numAmount}`, inline: true },
+                { name: 'To', value: `${resultCurrency === 'USD' ? '$' : '₱'}${result}`, inline: true },
                 { name: 'Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true }
             ])
             .setColor(config.colors.success)
@@ -521,7 +471,7 @@ module.exports = {
                 
                 embed.addFields([{
                     name: `${stockEmoji} ${item.name}`,
-                    value: `**USD:** ${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
+                    value: `**USD:** $${item.price} **PHP:** ₱${pricePHP}\n**Stock:** ${stock}\n**ID:** ${item.item_id}\n**Description:** ${item.description.slice(0, 80)}...`,
                     inline: true
                 }]);
             });
@@ -573,12 +523,12 @@ module.exports = {
                 const totalValuePHP = totalValueUSD * EXCHANGE_RATES.USD_TO_PHP;
                 embed.addFields([{
                     name: `${this.getCategoryEmoji(category)} ${category}`,
-                    value: `**Items:** ${items.length}\n**Value USD:** ${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** ${(totalValueUSD / items.length).toFixed(2)}`,
+                    value: `**Items:** ${items.length}\n**Value USD:** $${totalValueUSD.toFixed(2)}\n**Value PHP:** ₱${totalValuePHP.toFixed(0)}\n**Avg Price:** $${(totalValueUSD / items.length).toFixed(2)}`,
                     inline: true
                 }]);
             });
 
-            embed.setFooter({ text: 'Use !shop category <name> to view items • PayPal & GCash accepted' });
+            embed.setFooter({ text: 'Use !shop category <n> to view items • PayPal & GCash accepted' });
             message.reply({ embeds: [embed] });
         } catch (error) {
             message.reply('❌ Error retrieving categories.');
@@ -688,7 +638,6 @@ module.exports = {
                     inline: false
                 }]);
             } else {
-                // Show featured items with dual currency
                 const featuredItems = items.slice(0, 3);
                 featuredItems.forEach(item => {
                     const pricePHP = (item.price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
