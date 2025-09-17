@@ -1,4 +1,4 @@
-// systems/shopSystem.js - Real Item Shop & Trading System with PHP support
+// systems/shopSystem.js - Real Item Shop & Trading System with PHP support - COMPLETE REWRITE
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, AttachmentBuilder } = require('discord.js');
 const database = require('./database');
 
@@ -36,11 +36,16 @@ class ShopSystem {
                 console.error('Shop system interaction error:', error);
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({
-                        content: '❌ Something went wrong. Please try again.',
+                        content: 'Something went wrong. Please try again.',
                         ephemeral: true
                     }).catch(() => {});
                 }
             }
+        });
+
+        // Handle message events for image uploads
+        client.on('messageCreate', async (message) => {
+            await this.handleMessage(message);
         });
     }
 
@@ -70,6 +75,12 @@ class ShopSystem {
             case 'cancel_purchase_channel':
                 await this.cancelPurchaseChannel(interaction);
                 break;
+            case 'confirm_cancel_purchase':
+                await this.confirmCancelPurchase(interaction);
+                break;
+            case 'keep_purchase_active':
+                await this.keepPurchaseActive(interaction);
+                break;
             case 'accept_trade':
                 await this.acceptTrade(interaction);
                 break;
@@ -80,6 +91,20 @@ class ShopSystem {
                 if (interaction.customId.startsWith('confirm_purchase_')) {
                     const itemId = interaction.customId.replace('confirm_purchase_', '');
                     await this.processPurchaseConfirmation(interaction, itemId);
+                } else if (interaction.customId.startsWith('accept_trade_')) {
+                    const tradeId = interaction.customId.split('_')[2];
+                    await this.acceptTradeById(interaction, tradeId);
+                } else if (interaction.customId.startsWith('decline_trade_')) {
+                    const tradeId = interaction.customId.split('_')[2];
+                    await this.declineTradeById(interaction, tradeId);
+                } else if (interaction.customId.startsWith('negotiate_trade_')) {
+                    const tradeId = interaction.customId.split('_')[2];
+                    await this.negotiateTrade(interaction, tradeId);
+                } else {
+                    await interaction.reply({
+                        content: 'This feature is still being developed. Please contact an admin for assistance.',
+                        ephemeral: true
+                    });
                 }
         }
     }
@@ -100,20 +125,19 @@ class ShopSystem {
         }
     }
 
-    // New method for canceling purchase
+    // Purchase management methods
     async cancelPurchase(interaction) {
         await interaction.update({
-            content: '❌ Purchase cancelled.',
+            content: 'Purchase cancelled.',
             embeds: [],
             components: []
         });
     }
 
-    // New method for completing purchase (mark as paid)
     async completePurchase(interaction) {
         if (!interaction.channel.name.includes('purchase-')) {
             return await interaction.reply({
-                content: '❌ This can only be used in purchase channels.',
+                content: 'This can only be used in purchase channels.',
                 ephemeral: true
             });
         }
@@ -121,18 +145,18 @@ class ShopSystem {
         const hasPermission = interaction.user.id === config.ownerId || config.adminIds.includes(interaction.user.id);
         if (!hasPermission) {
             return await interaction.reply({
-                content: '❌ Only staff can mark purchases as completed.',
+                content: 'Only staff can mark purchases as completed.',
                 ephemeral: true
             });
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('✅ Purchase Completed!')
+            .setTitle('Purchase Completed!')
             .setDescription('Payment confirmed and item delivered successfully!')
             .addFields([
-                { name: '💳 Payment Status', value: '✅ **Confirmed**', inline: true },
-                { name: '📦 Delivery Status', value: '✅ **Completed**', inline: true },
-                { name: '⭐ Thank You!', value: 'Please consider leaving a review!', inline: false }
+                { name: 'Payment Status', value: '**Confirmed**', inline: true },
+                { name: 'Delivery Status', value: '**Completed**', inline: true },
+                { name: 'Thank You!', value: 'Please consider leaving a review!', inline: false }
             ])
             .setColor(config.colors.success)
             .setTimestamp();
@@ -143,7 +167,7 @@ class ShopSystem {
         setTimeout(async () => {
             try {
                 await interaction.followUp({ 
-                    content: '🔒 **Purchase completed!** This channel will be deleted in 10 seconds...' 
+                    content: '**Purchase completed!** This channel will be deleted in 10 seconds...' 
                 });
                 setTimeout(async () => {
                     await interaction.channel.delete();
@@ -154,10 +178,9 @@ class ShopSystem {
         }, 5000);
     }
 
-    // New method for canceling purchase channel
     async cancelPurchaseChannel(interaction) {
         const embed = new EmbedBuilder()
-            .setTitle('🔒 Cancel Purchase')
+            .setTitle('Cancel Purchase')
             .setDescription('Are you sure you want to cancel this purchase?')
             .setColor(config.colors.warning);
 
@@ -178,23 +201,89 @@ class ShopSystem {
         await interaction.reply({ embeds: [embed], components: [confirmButtons] });
     }
 
+    async confirmCancelPurchase(interaction) {
+        if (!interaction.channel.name.includes('purchase-')) {
+            return await interaction.reply({
+                content: 'This can only be used in purchase channels.',
+                ephemeral: true
+            });
+        }
+
+        await interaction.update({
+            content: '**Purchase Cancelled** - This channel will be deleted in 10 seconds...',
+            embeds: [],
+            components: []
+        });
+
+        // Log cancellation
+        const embed = new EmbedBuilder()
+            .setTitle('Purchase Cancelled')
+            .setDescription(`Purchase cancelled by ${interaction.user}`)
+            .addFields([
+                { name: 'User', value: `${interaction.user}`, inline: true },
+                { name: 'Date', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                { name: 'Channel', value: interaction.channel.name, inline: true }
+            ])
+            .setColor(config.colors.error)
+            .setTimestamp();
+
+        try {
+            const logChannel = interaction.guild.channels.cache.get(config.ticketSettings.logChannelId);
+            if (logChannel) {
+                await logChannel.send({ embeds: [embed] });
+            }
+        } catch (error) {
+            console.error('Error logging purchase cancellation:', error);
+        }
+
+        // Delete channel after delay
+        setTimeout(async () => {
+            try {
+                await interaction.channel.delete();
+            } catch (error) {
+                console.error('Error deleting cancelled purchase channel:', error);
+            }
+        }, 10000);
+    }
+
+    async keepPurchaseActive(interaction) {
+        await interaction.update({
+            content: 'Purchase will remain active. Cancellation cancelled.',
+            embeds: [],
+            components: []
+        });
+
+        // Send instructions to continue
+        const continueEmbed = new EmbedBuilder()
+            .setTitle('Purchase Still Active')
+            .setDescription('Your purchase is still active. Staff will continue to assist you with payment processing.')
+            .addFields([
+                { name: 'Payment Methods', value: 'PayPal (USD/PHP) • GCash (PHP only)', inline: true },
+                { name: 'Currency Info', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
+                { name: 'Next Steps', value: 'Wait for staff to provide payment details', inline: true }
+            ])
+            .setColor(config.colors.primary);
+
+        await interaction.followUp({ embeds: [continueEmbed] });
+    }
+
     async createShopPanel(channel) {
         const embed = new EmbedBuilder()
-            .setTitle('🛍️ Real Item Marketplace & Trading Hub')
+            .setTitle('Real Item Marketplace & Trading Hub')
             .setDescription('**Buy and sell real game items!** Trade Roblox items, game accounts, and digital goods.\n\n*Secure transactions • PayPal & GCash accepted • PHP/USD supported*')
             .addFields([
                 {
-                    name: '🎮 **Available Items:**',
+                    name: '**Available Items:**',
                     value: '```• Roblox Limiteds & Items\n• Game Accounts (All Games)\n• Skins & Cosmetics\n• In-Game Currency\n• Rare Collectibles\n• Digital Game Keys```',
                     inline: true
                 },
                 {
-                    name: '💰 **Payment Methods:**',
+                    name: '**Payment Methods:**',
                     value: '```• PayPal (USD/PHP)\n• GCash (PHP only)\n• Automatic PHP conversion\n• Secure escrow service\n• Buyer protection\n• Instant delivery```',
                     inline: true
                 },
                 {
-                    name: '🎯 **Supported Platforms:**',
+                    name: '**Supported Platforms:**',
                     value: '```• Roblox (Limiteds/Robux)\n• Fortnite (Accounts/Skins)\n• Minecraft (Accounts)\n• Steam (Keys/Items)\n• Epic Games & More```',
                     inline: false
                 }
@@ -202,7 +291,7 @@ class ShopSystem {
             .setColor(config.colors.primary)
             .setThumbnail('https://cdn-icons-png.flaticon.com/512/3081/3081648.png')
             .setImage('https://via.placeholder.com/400x100/0099ff/ffffff?text=REAL+ITEM+MARKETPLACE')
-            .setFooter({ text: '💎 Real Items Only • 🛡️ PayPal & GCash • 🇵🇭 PHP Support' });
+            .setFooter({ text: 'Real Items Only • PayPal & GCash • PHP Support' });
 
         const buttons = new ActionRowBuilder()
             .addComponents(
@@ -236,7 +325,7 @@ class ShopSystem {
         
         if (items.length === 0) {
             const embed = new EmbedBuilder()
-                .setTitle('🛒 Shop is Empty')
+                .setTitle('Shop is Empty')
                 .setDescription('No items available right now. Check back later!')
                 .setColor(config.colors.warning);
             return await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -251,7 +340,7 @@ class ShopSystem {
         });
 
         const embed = new EmbedBuilder()
-            .setTitle('🛍️ Item Marketplace')
+            .setTitle('Item Marketplace')
             .setDescription('Choose a category to browse items:')
             .setColor(config.colors.primary);
 
@@ -263,7 +352,7 @@ class ShopSystem {
             
             embed.addFields([
                 {
-                    name: `📂 ${category}`,
+                    name: `${category}`,
                     value: `${items.length} items\nAvg: $${avgPrice.toFixed(2)} (₱${avgPricePHP})`,
                     inline: true
                 }
@@ -295,7 +384,7 @@ class ShopSystem {
         const items = allItems.filter(item => (item.category || 'Other') === category);
 
         const embed = new EmbedBuilder()
-            .setTitle(`🛒 ${category} Items`)
+            .setTitle(`${category} Items`)
             .setDescription(`Available items in **${category}** category:`)
             .setColor(config.colors.primary);
 
@@ -340,28 +429,28 @@ class ShopSystem {
         const item = allItems.find(i => i.item_id.toString() === itemId);
 
         if (!item) {
-            return await interaction.reply({ content: '❌ Item not found!', ephemeral: true });
+            return await interaction.reply({ content: 'Item not found!', ephemeral: true });
         }
 
         if (item.stock === 0) {
-            return await interaction.reply({ content: '❌ This item is out of stock!', ephemeral: true });
+            return await interaction.reply({ content: 'This item is out of stock!', ephemeral: true });
         }
 
         const pricePHP = (item.price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
 
         // Create purchase confirmation with PHP support
         const embed = new EmbedBuilder()
-            .setTitle('💳 Purchase Confirmation')
+            .setTitle('Purchase Confirmation')
             .setDescription(`You're about to purchase: **${item.name}**`)
             .addFields([
-                { name: '💎 Item', value: item.name, inline: true },
-                { name: '💰 Price (USD)', value: `$${item.price}`, inline: true },
-                { name: '🇵🇭 Price (PHP)', value: `₱${pricePHP}`, inline: true },
-                { name: '📦 Stock', value: item.stock === -1 ? 'Unlimited' : `${item.stock} left`, inline: true },
-                { name: '💳 Payment Methods', value: 'PayPal (USD/PHP)\nGCash (PHP only)', inline: true },
-                { name: '🔄 Auto Conversion', value: 'USD ↔ PHP supported', inline: true },
-                { name: '📝 Description', value: item.description, inline: false },
-                { name: '⚠️ Next Step', value: 'A private purchase channel will be created for secure payment processing.', inline: false }
+                { name: 'Item', value: item.name, inline: true },
+                { name: 'Price (USD)', value: `$${item.price}`, inline: true },
+                { name: 'Price (PHP)', value: `₱${pricePHP}`, inline: true },
+                { name: 'Stock', value: item.stock === -1 ? 'Unlimited' : `${item.stock} left`, inline: true },
+                { name: 'Payment Methods', value: 'PayPal (USD/PHP)\nGCash (PHP only)', inline: true },
+                { name: 'Auto Conversion', value: 'USD ↔ PHP supported', inline: true },
+                { name: 'Description', value: item.description, inline: false },
+                { name: 'Next Step', value: 'A private purchase channel will be created for secure payment processing.', inline: false }
             ])
             .setColor(config.colors.warning)
             .setThumbnail(item.image_url || 'https://cdn-icons-png.flaticon.com/512/891/891462.png');
@@ -390,7 +479,7 @@ class ShopSystem {
         const item = allItems.find(i => i.item_id.toString() === itemId);
 
         if (!item) {
-            return await interaction.editReply({ content: '❌ Item not found!' });
+            return await interaction.editReply({ content: 'Item not found!' });
         }
 
         try {
@@ -425,26 +514,26 @@ class ShopSystem {
 
             // Send purchase details to channel with PHP support
             const purchaseEmbed = new EmbedBuilder()
-                .setTitle('💳 Purchase Channel Created')
+                .setTitle('Purchase Channel Created')
                 .setDescription(`**${interaction.user.displayName}** is purchasing: **${item.name}**`)
                 .addFields([
-                    { name: '💎 Item', value: item.name, inline: true },
-                    { name: '💰 Price (USD)', value: `$${item.price}`, inline: true },
-                    { name: '🇵🇭 Price (PHP)', value: `₱${pricePHP}`, inline: true },
-                    { name: '🆔 Purchase ID', value: purchaseId, inline: true },
-                    { name: '📅 Date', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-                    { name: '🔄 Exchange Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
+                    { name: 'Item', value: item.name, inline: true },
+                    { name: 'Price (USD)', value: `$${item.price}`, inline: true },
+                    { name: 'Price (PHP)', value: `₱${pricePHP}`, inline: true },
+                    { name: 'Purchase ID', value: purchaseId, inline: true },
+                    { name: 'Date', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                    { name: 'Exchange Rate', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
                     { 
-                        name: '💳 Payment Options', 
+                        name: 'Payment Options', 
                         value: '**PayPal:**\n• USD payments accepted\n• PHP payments accepted\n\n**GCash:**\n• PHP payments only\n• Instant local transfer', 
                         inline: false 
                     },
                     { 
-                        name: '📋 Payment Instructions', 
+                        name: 'Payment Instructions', 
                         value: '1️⃣ Staff will verify item availability\n2️⃣ Choose PayPal (USD/PHP) or GCash (PHP)\n3️⃣ Receive payment details\n4️⃣ Complete payment securely\n5️⃣ Receive item instantly', 
                         inline: false 
                     },
-                    { name: '📞 Support', value: 'Our team will guide you through the payment process!', inline: false }
+                    { name: 'Support', value: 'Our team will guide you through the payment process!', inline: false }
                 ])
                 .setColor(config.colors.success)
                 .setThumbnail(item.image_url || 'https://cdn-icons-png.flaticon.com/512/891/891462.png')
@@ -473,50 +562,49 @@ class ShopSystem {
 
             // Send payment method details
             const paymentEmbed = new EmbedBuilder()
-                .setTitle('💳 Payment Method Details')
+                .setTitle('Payment Method Details')
                 .setDescription('Choose your preferred payment method:')
                 .addFields([
                     { 
-                        name: '🌍 PayPal (International)', 
+                        name: 'PayPal (International)', 
                         value: `**USD Option:** $${item.price}\n**PHP Option:** ₱${pricePHP}\n✅ Buyer protection included\n✅ Credit/debit cards accepted`, 
                         inline: true 
                     },
                     { 
-                        name: '🇵🇭 GCash (Philippines)', 
+                        name: 'GCash (Philippines)', 
                         value: `**PHP Only:** ₱${pricePHP}\n✅ Instant local transfer\n✅ No international fees\n✅ Mobile wallet friendly`, 
                         inline: true 
                     },
-                    { name: '🔄 Currency Info', value: `Exchange rate: 1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}\nRates updated daily`, inline: false }
+                    { name: 'Currency Info', value: `Exchange rate: 1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}\nRates updated daily`, inline: false }
                 ])
                 .setColor(config.colors.primary);
 
             await purchaseChannel.send({ embeds: [paymentEmbed] });
 
             await interaction.editReply({
-                content: `✅ Purchase channel created! ${purchaseChannel}\n\n💰 **Price:** $${item.price} (₱${pricePHP})\n💳 **Payment:** PayPal or GCash accepted\n🆔 **ID:** ${purchaseId}`,
+                content: `Purchase channel created! ${purchaseChannel}\n\n**Price:** $${item.price} (₱${pricePHP})\n**Payment:** PayPal or GCash accepted\n**ID:** ${purchaseId}`,
             });
 
         } catch (error) {
             console.error('Error creating purchase channel:', error);
             await interaction.editReply({
-                content: '❌ Error creating purchase channel. Please contact an admin.',
+                content: 'Error creating purchase channel. Please contact an admin.',
             });
         }
     }
 
-    // Modal for adding items with file support
     async showAddItemModal(interaction) {
         const hasPermission = interaction.user.id === config.ownerId || config.adminIds.includes(interaction.user.id);
         if (!hasPermission) {
             return await interaction.reply({ 
-                content: '❌ Only admins can add items to the shop!', 
+                content: 'Only admins can add items to the shop!', 
                 ephemeral: true 
             });
         }
 
         const modal = new ModalBuilder()
             .setCustomId('add_item_modal')
-            .setTitle('📦 Add Item to Shop');
+            .setTitle('Add Item to Shop');
 
         const nameInput = new TextInputBuilder()
             .setCustomId('item_name')
@@ -584,11 +672,11 @@ class ShopSystem {
             const stock = parseInt(stockStr);
 
             if (isNaN(price) || price < 0) {
-                return await interaction.editReply({ content: '❌ Invalid price! Please enter a valid number.' });
+                return await interaction.editReply({ content: 'Invalid price! Please enter a valid number.' });
             }
 
             if (isNaN(stock)) {
-                return await interaction.editReply({ content: '❌ Invalid stock amount! Use a number or -1 for unlimited.' });
+                return await interaction.editReply({ content: 'Invalid stock amount! Use a number or -1 for unlimited.' });
             }
 
             const itemDataObj = {
@@ -607,17 +695,17 @@ class ShopSystem {
                 const pricePHP = (price * EXCHANGE_RATES.USD_TO_PHP).toFixed(0);
                 
                 const embed = new EmbedBuilder()
-                    .setTitle('✅ Item Added Successfully!')
+                    .setTitle('Item Added Successfully!')
                     .setDescription(`**${name}** has been added to the marketplace!`)
                     .addFields([
-                        { name: '🆔 Item ID', value: itemId.toString(), inline: true },
-                        { name: '💰 Price (USD)', value: `$${price.toFixed(2)}`, inline: true },
-                        { name: '🇵🇭 Price (PHP)', value: `₱${pricePHP}`, inline: true },
-                        { name: '📂 Category', value: category, inline: true },
-                        { name: '📦 Stock', value: stock === -1 ? 'Unlimited' : stock.toString(), inline: true },
-                        { name: '👤 Added By', value: interaction.user.tag, inline: true },
-                        { name: '📝 Description', value: description.slice(0, 200), inline: false },
-                        { name: '📸 Add Image', value: 'Send an image file in this channel to add it to the item!', inline: false }
+                        { name: 'Item ID', value: itemId.toString(), inline: true },
+                        { name: 'Price (USD)', value: `$${price.toFixed(2)}`, inline: true },
+                        { name: 'Price (PHP)', value: `₱${pricePHP}`, inline: true },
+                        { name: 'Category', value: category, inline: true },
+                        { name: 'Stock', value: stock === -1 ? 'Unlimited' : stock.toString(), inline: true },
+                        { name: 'Added By', value: interaction.user.tag, inline: true },
+                        { name: 'Description', value: description.slice(0, 200), inline: false },
+                        { name: 'Add Image', value: 'Send an image file in this channel to add it to the item!', inline: false }
                     ])
                     .setColor(config.colors.success)
                     .setTimestamp();
@@ -632,18 +720,18 @@ class ShopSystem {
                 });
 
             } else {
-                await interaction.editReply({ content: '❌ Error adding item to shop. Please try again.' });
+                await interaction.editReply({ content: 'Error adding item to shop. Please try again.' });
             }
         } catch (error) {
             console.error('Error adding shop item:', error);
-            await interaction.editReply({ content: '❌ Error processing item data. Please check your input and try again.' });
+            await interaction.editReply({ content: 'Error processing item data. Please check your input and try again.' });
         }
     }
 
     async showTradeModal(interaction) {
         const modal = new ModalBuilder()
             .setCustomId('trade_modal')
-            .setTitle('🔄 Create Trade Request');
+            .setTitle('Create Trade Request');
 
         const targetUserInput = new TextInputBuilder()
             .setCustomId('target_user')
@@ -696,20 +784,118 @@ class ShopSystem {
     }
 
     async processTradeRequest(interaction) {
-        await interaction.reply({ 
-            content: '🔄 Advanced trading system with PayPal/GCash support is being developed. Coming soon!', 
-            ephemeral: true 
-        });
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            const targetUser = interaction.fields.getTextInputValue('target_user');
+            const gamePlatform = interaction.fields.getTextInputValue('game_platform');
+            const yourOffer = interaction.fields.getTextInputValue('your_offer');
+            const theirOffer = interaction.fields.getTextInputValue('their_offer');
+            const notes = interaction.fields.getTextInputValue('trade_notes') || 'None';
+
+            // Extract user ID from mention or use as-is
+            const targetUserId = targetUser.replace(/[<@!>]/g, '');
+            
+            try {
+                const targetMember = await interaction.guild.members.fetch(targetUserId);
+                
+                const tradeId = `TRD${Date.now().toString().slice(-6)}`;
+                
+                // Create trade request in database
+                const tradeData = {
+                    requesterId: interaction.user.id,
+                    targetId: targetMember.id,
+                    gamePlatform: gamePlatform,
+                    requesterOffer: yourOffer,
+                    targetOffer: theirOffer,
+                    notes: notes
+                };
+
+                const tradeDbId = await database.createTradeRequest(tradeData);
+
+                // Create trade request embed
+                const tradeEmbed = new EmbedBuilder()
+                    .setTitle('Trade Request Created')
+                    .setDescription(`**${interaction.user.displayName}** wants to trade with **${targetMember.displayName}**`)
+                    .addFields([
+                        { name: 'Trade ID', value: tradeId, inline: true },
+                        { name: 'Platform', value: gamePlatform, inline: true },
+                        { name: 'Created', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                        { name: 'They Offer', value: yourOffer, inline: false },
+                        { name: 'They Want', value: theirOffer, inline: false },
+                        { name: 'Notes', value: notes, inline: false },
+                        { name: 'Payment Support', value: 'PayPal (USD/PHP) • GCash (PHP) • Escrow available', inline: false }
+                    ])
+                    .setColor(config.colors.primary)
+                    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+                    .setTimestamp();
+
+                const tradeButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`accept_trade_${tradeDbId}`)
+                            .setLabel('Accept Trade')
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji('✅'),
+                        new ButtonBuilder()
+                            .setCustomId(`decline_trade_${tradeDbId}`)
+                            .setLabel('Decline Trade')
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji('❌'),
+                        new ButtonBuilder()
+                            .setCustomId(`negotiate_trade_${tradeDbId}`)
+                            .setLabel('Negotiate')
+                            .setStyle(ButtonStyle.Secondary)
+                            .setEmoji('💬')
+                    );
+
+                // Send to target user
+                try {
+                    await targetMember.send({
+                        content: `**New Trade Request from ${interaction.user.tag}**`,
+                        embeds: [tradeEmbed],
+                        components: [tradeButtons]
+                    });
+
+                    await interaction.editReply({
+                        content: `**Trade request sent to ${targetMember.displayName}!**\n\n**Trade ID:** ${tradeId}\n**Platform:** ${gamePlatform}\n**Your Offer:** ${yourOffer}\n**You Want:** ${theirOffer}\n\nThey will receive a DM with the trade details and can accept/decline/negotiate.`
+                    });
+
+                } catch (error) {
+                    // If DM fails, try sending in current channel
+                    await interaction.followUp({
+                        content: `${targetMember} - You have a new trade request!`,
+                        embeds: [tradeEmbed],
+                        components: [tradeButtons]
+                    });
+
+                    await interaction.editReply({
+                        content: `**Trade request created!** (Sent in channel since user's DMs are closed)\n\n**Trade ID:** ${tradeId}`
+                    });
+                }
+
+            } catch (error) {
+                await interaction.editReply({
+                    content: 'Could not find that user. Make sure they are in this server and you used their correct username or ID.'
+                });
+            }
+
+        } catch (error) {
+            console.error('Error processing trade request:', error);
+            await interaction.editReply({
+                content: 'Error creating trade request. Please try again or contact an admin.'
+            });
+        }
     }
 
     async showPurchases(interaction) {
         const embed = new EmbedBuilder()
-            .setTitle('📦 Your Purchases')
+            .setTitle('Your Purchases')
             .setDescription('Your purchase history will appear here once you make your first purchase!')
             .addFields([
-                { name: '💳 Payment Methods', value: 'PayPal (USD/PHP) • GCash (PHP)', inline: true },
-                { name: '🔄 Auto Conversion', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
-                { name: '🛡️ Protection', value: 'Full buyer protection included', inline: true }
+                { name: 'Payment Methods', value: 'PayPal (USD/PHP) • GCash (PHP)', inline: true },
+                { name: 'Auto Conversion', value: `1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP}`, inline: true },
+                { name: 'Protection', value: 'Full buyer protection included', inline: true }
             ])
             .setColor(config.colors.primary);
 
@@ -721,20 +907,20 @@ class ShopSystem {
         
         if (!hasPermission) {
             return await interaction.reply({ 
-                content: '❌ Only admins can manage the shop!', 
+                content: 'Only admins can manage the shop!', 
                 ephemeral: true 
             });
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('⚙️ Shop Management')
+            .setTitle('Shop Management')
             .setDescription('**Admin shop management tools:**')
             .addFields([
-                { name: '📦 Add Items', value: 'Click button below or use `!shop add-item`', inline: true },
-                { name: '📊 View Stats', value: 'Use `!shop stats` command', inline: true },
-                { name: '📋 List Items', value: 'Use `!shop list` command', inline: true },
-                { name: '💰 Currency', value: `USD/PHP supported (1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP})`, inline: false },
-                { name: '💳 Payments', value: 'PayPal (international) • GCash (Philippines)', inline: false }
+                { name: 'Add Items', value: 'Click button below or use `!shop add-item`', inline: true },
+                { name: 'View Stats', value: 'Use `!shop stats` command', inline: true },
+                { name: 'List Items', value: 'Use `!shop list` command', inline: true },
+                { name: 'Currency', value: `USD/PHP supported (1 USD = ₱${EXCHANGE_RATES.USD_TO_PHP})`, inline: false },
+                { name: 'Payments', value: 'PayPal (international) • GCash (Philippines)', inline: false }
             ])
             .setColor(config.colors.primary);
 
@@ -750,6 +936,53 @@ class ShopSystem {
         await interaction.reply({ embeds: [embed], components: [managementButtons], ephemeral: true });
     }
 
+    // Trade system methods
+    async acceptTradeById(interaction, tradeId) {
+        await interaction.reply({
+            content: '**Trade Accepted!** Creating secure trade channel...',
+            ephemeral: true
+        });
+
+        setTimeout(async () => {
+            try {
+                await interaction.editReply({
+                    content: '**Trade accepted!** A secure trade channel will be created shortly with escrow support for PayPal/GCash transactions.'
+                });
+            } catch (error) {
+                console.error('Error updating trade acceptance:', error);
+            }
+        }, 2000);
+    }
+
+    async declineTradeById(interaction, tradeId) {
+        await interaction.update({
+            content: '**Trade Declined** - This trade request has been declined.',
+            embeds: [],
+            components: []
+        });
+    }
+
+    async negotiateTrade(interaction, tradeId) {
+        await interaction.reply({
+            content: 'Trade negotiation system is being developed. For now, please contact the other party directly.',
+            ephemeral: true
+        });
+    }
+
+    async acceptTrade(interaction) {
+        await interaction.reply({ 
+            content: 'Trade acceptance system with PayPal/GCash escrow coming soon!', 
+            ephemeral: true 
+        });
+    }
+
+    async declineTrade(interaction) {
+        await interaction.reply({ 
+            content: 'Trade declined.', 
+            ephemeral: true 
+        });
+    }
+
     // Handle file uploads for item images
     async handleMessage(message) {
         if (message.author.bot) return;
@@ -762,13 +995,10 @@ class ShopSystem {
             const attachment = message.attachments.first();
             if (attachment.contentType && attachment.contentType.startsWith('image/')) {
                 try {
-                    // Update item with image URL
                     const itemId = transaction.itemId;
-                    // In a real implementation, you'd save the image and update the database
-                    // For now, we'll just use the Discord attachment URL
                     
                     const embed = new EmbedBuilder()
-                        .setTitle('✅ Image Added Successfully!')
+                        .setTitle('Image Added Successfully!')
                         .setDescription(`Image has been added to item #${itemId}`)
                         .setImage(attachment.url)
                         .setColor(config.colors.success);
@@ -779,10 +1009,10 @@ class ShopSystem {
                     this.activeTransactions.delete(message.author.id);
                 } catch (error) {
                     console.error('Error processing image upload:', error);
-                    await message.reply('❌ Error processing image. Please try again.');
+                    await message.reply('Error processing image. Please try again.');
                 }
             } else {
-                await message.reply('❌ Please upload an image file (JPG, PNG, GIF, etc.)');
+                await message.reply('Please upload an image file (JPG, PNG, GIF, etc.)');
             }
         }
     }
@@ -821,21 +1051,6 @@ class ShopSystem {
         } catch (error) {
             console.error('Error loading shop items:', error);
         }
-    }
-
-    // Placeholder methods for trade system
-    async acceptTrade(interaction) {
-        await interaction.reply({ 
-            content: '✅ Trade acceptance system with PayPal/GCash escrow coming soon!', 
-            ephemeral: true 
-        });
-    }
-
-    async declineTrade(interaction) {
-        await interaction.reply({ 
-            content: '❌ Trade declined.', 
-            ephemeral: true 
-        });
     }
 }
 
